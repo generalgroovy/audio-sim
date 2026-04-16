@@ -3,23 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2D Sound Simulation</title>
+<title>2D Sound Simulation - Advanced</title>
 <style>
-  body { margin:0; font-family:Arial; display:flex; }
-  #controls { width:300px; padding:10px; background:#f4f4f4; overflow:auto; }
-  canvas { flex:1; background:#111; }
-  label { display:block; margin-top:10px; }
-  button { margin-top:10px; }
+  body { margin:0; display:flex; font-family:Arial; }
+  #controls { width:260px; background:#f4f4f4; padding:10px; }
+  canvas { flex:1; background:#000; cursor:grab; }
 </style>
 </head>
 <body>
 <div id="controls">
-  <h3>Speaker Config</h3>
-  <label>Frequency (Hz)<input id="freq" type="number" value="1000"></label>
-  <label>Volume (dB)<input id="vol" type="number" value="70"></label>
-  <label>Angle (deg)<input id="angle" type="number" value="90"></label>
+  <h3>Controls</h3>
   <button onclick="addSpeaker()">Add Speaker</button>
-  <button onclick="resetTest()">Load Test Case</button>
+  <button onclick="resetTest()">Test Case</button>
 </div>
 <canvas id="canvas"></canvas>
 <script>
@@ -29,82 +24,145 @@ resize();
 window.addEventListener('resize', resize);
 
 let speakers = [];
-let room = [
-  {x:100,y:100},{x:600,y:100},{x:600,y:600},{x:100,y:600}
+let points = [
+  {x:150,y:150},{x:650,y:150},{x:650,y:650},{x:150,y:650}
 ];
 
+let dragging = null;
+
 function resize(){
-  canvas.width = window.innerWidth - 300;
+  canvas.width = window.innerWidth - 260;
   canvas.height = window.innerHeight;
 }
 
 function addSpeaker(){
-  speakers.push({
-    x: Math.random()*400+150,
-    y: Math.random()*400+150,
-    freq: +freq.value,
-    vol: +vol.value,
-    angle: +angle.value
-  });
+  speakers.push({x:300,y:300,freq:1000,vol:60});
 }
 
 function resetTest(){
   speakers = [
-    {x:300,y:300,freq:80,vol:60,angle:180},
-    {x:400,y:300,freq:1000,vol:60,angle:120},
-    {x:350,y:200,freq:5000,vol:60,angle:90},
-    {x:350,y:400,freq:8000,vol:60,angle:90}
+    {x:350,y:350,freq:80,vol:60},
+    {x:450,y:350,freq:1000,vol:60},
+    {x:400,y:250,freq:5000,vol:60},
+    {x:400,y:450,freq:8000,vol:60}
   ];
 }
 
+canvas.onmousedown = e => {
+  let mx = e.offsetX, my = e.offsetY;
+
+  for(let p of points){
+    if(dist(mx,my,p.x,p.y)<10){ dragging = p; return; }
+  }
+  for(let s of speakers){
+    if(dist(mx,my,s.x,s.y)<10){ dragging = s; return; }
+  }
+};
+
+canvas.onmousemove = e => {
+  if(dragging){
+    dragging.x = e.offsetX;
+    dragging.y = e.offsetY;
+  }
+};
+
+canvas.onmouseup = ()=> dragging=null;
+
+function dist(x1,y1,x2,y2){
+  return Math.hypot(x2-x1,y2-y1);
+}
+
+function attenuation(freq, d){
+  let spread = 1/(d*d*0.002 + 1);
+  let absorb = Math.exp(-freq*0.00005*d);
+  return spread * absorb;
+}
+
+function reflect(px,py){
+  // simple mirror reflections (1 bounce)
+  let images = [];
+  for(let i=0;i<points.length;i++){
+    let a = points[i];
+    let b = points[(i+1)%points.length];
+
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    let len = Math.hypot(dx,dy);
+    let nx = -dy/len;
+    let ny = dx/len;
+
+    let d = (px-a.x)*nx + (py-a.y)*ny;
+    images.push({x: px - 2*d*nx, y: py - 2*d*ny});
+  }
+  return images;
+}
+
 function drawRoom(){
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle="#fff";
   ctx.beginPath();
-  ctx.moveTo(room[0].x, room[0].y);
-  for(let p of room) ctx.lineTo(p.x,p.y);
+  ctx.moveTo(points[0].x,points[0].y);
+  for(let p of points) ctx.lineTo(p.x,p.y);
   ctx.closePath();
   ctx.stroke();
-}
 
-function freqColor(freq){
-  if(freq < 200) return '0,0,255';
-  if(freq < 2000) return '0,255,0';
-  return '255,0,0';
-}
-
-function attenuation(freq, dist){
-  let base = 1/(dist*0.02+1);
-  if(freq < 200) return base * 1.2;
-  if(freq > 5000) return base * 0.6;
-  return base;
-}
-
-function drawSpeakers(){
-  for(let s of speakers){
-    let color = freqColor(s.freq);
-    for(let r=0;r<200;r+=5){
-      let alpha = attenuation(s.freq,r) * (s.vol/100);
-      ctx.beginPath();
-      ctx.arc(s.x,s.y,r,0,Math.PI*2);
-      ctx.strokeStyle = `rgba(${color},${alpha})`;
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = `rgb(${color})`;
+  for(let p of points){
+    ctx.fillStyle="#fff";
     ctx.beginPath();
-    ctx.arc(s.x,s.y,5,0,Math.PI*2);
+    ctx.arc(p.x,p.y,5,0,Math.PI*2);
     ctx.fill();
   }
 }
 
-function simulate(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawRoom();
-  drawSpeakers();
-  requestAnimationFrame(simulate);
+function color(freq){
+  if(freq<200) return [0,0,255];
+  if(freq<2000) return [0,255,0];
+  return [255,0,0];
 }
 
-simulate();
+function drawField(){
+  let step = 8;
+  for(let x=0;x<canvas.width;x+=step){
+    for(let y=0;y<canvas.height;y+=step){
+      let total = 0;
+
+      for(let s of speakers){
+        let d = dist(x,y,s.x,s.y);
+        total += attenuation(s.freq,d) * (s.vol/100);
+
+        let imgs = reflect(s.x,s.y);
+        for(let img of imgs){
+          let rd = dist(x,y,img.x,img.y);
+          total += attenuation(s.freq,rd) * 0.5 * (s.vol/100);
+        }
+      }
+
+      if(total>0.01){
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(total,0.3)})`;
+        ctx.fillRect(x,y,step,step);
+      }
+    }
+  }
+}
+
+function drawSpeakers(){
+  for(let s of speakers){
+    let [r,g,b]=color(s.freq);
+    ctx.fillStyle=`rgb(${r},${g},${b})`;
+    ctx.beginPath();
+    ctx.arc(s.x,s.y,6,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawField();
+  drawRoom();
+  drawSpeakers();
+  requestAnimationFrame(loop);
+}
+
+loop();
 </script>
 </body>
 </html>
