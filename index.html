@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2D Sound Simulation</title>
+<style>
+  body { margin:0; font-family:Arial; display:flex; }
+  #controls { width:300px; padding:10px; background:#f4f4f4; overflow:auto; }
+  canvas { flex:1; background:#111; }
+  label { display:block; margin-top:10px; }
+  button { margin-top:10px; }
+</style>
+</head>
+<body>
+<div id="controls">
+  <h3>Speaker Config</h3>
+  <label>Frequency (Hz)<input id="freq" type="number" value="1000"></label>
+  <label>Volume (dB)<input id="vol" type="number" value="70"></label>
+  <label>Angle (deg)<input id="angle" type="number" value="90"></label>
+  <button onclick="addSpeaker()">Add Speaker</button>
+  <button onclick="resetTest()">Load Test Case</button>
+</div>
+<canvas id="canvas"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+resize();
+window.addEventListener('resize', resize);
+
+let speakers = [];
+let room = [
+  {x:100,y:100},{x:600,y:100},{x:600,y:600},{x:100,y:600}
+];
+
+function resize(){
+  canvas.width = window.innerWidth - 300;
+  canvas.height = window.innerHeight;
+}
+
+function addSpeaker(){
+  speakers.push({
+    x: Math.random()*400+150,
+    y: Math.random()*400+150,
+    freq: +freq.value,
+    vol: +vol.value,
+    angle: +angle.value
+  });
+}
+
+function resetTest(){
+  speakers = [
+    {x:300,y:300,freq:80,vol:60,angle:180},
+    {x:400,y:300,freq:1000,vol:60,angle:120},
+    {x:350,y:200,freq:5000,vol:60,angle:90},
+    {x:350,y:400,freq:8000,vol:60,angle:90}
+  ];
+}
+
+function drawRoom(){
+  ctx.strokeStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(room[0].x, room[0].y);
+  for(let p of room) ctx.lineTo(p.x,p.y);
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function freqColor(freq){
+  if(freq < 200) return '0,0,255';
+  if(freq < 2000) return '0,255,0';
+  return '255,0,0';
+}
+
+function attenuation(freq, dist){
+  let base = 1/(dist*0.02+1);
+  if(freq < 200) return base * 1.2;
+  if(freq > 5000) return base * 0.6;
+  return base;
+}
+
+function drawSpeakers(){
+  for(let s of speakers){
+    let color = freqColor(s.freq);
+    for(let r=0;r<200;r+=5){
+      let alpha = attenuation(s.freq,r) * (s.vol/100);
+      ctx.beginPath();
+      ctx.arc(s.x,s.y,r,0,Math.PI*2);
+      ctx.strokeStyle = `rgba(${color},${alpha})`;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = `rgb(${color})`;
+    ctx.beginPath();
+    ctx.arc(s.x,s.y,5,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function simulate(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawRoom();
+  drawSpeakers();
+  requestAnimationFrame(simulate);
+}
+
+simulate();
+</script>
+</body>
+</html>
