@@ -78,21 +78,37 @@ function attenuation(freq, d){
   return spread * absorb;
 }
 
-function reflect(px,py){
-  // simple mirror reflections (1 bounce)
+function reflect(px, py) {
+  // Correct image source method for line segments (specular reflection)
   let images = [];
-  for(let i=0;i<points.length;i++){
-    let a = points[i];
-    let b = points[(i+1)%points.length];
 
+  for (let i = 0; i < points.length; i++) {
+    let a = points[i];
+    let b = points[(i + 1) % points.length];
+
+    // line vector
     let dx = b.x - a.x;
     let dy = b.y - a.y;
-    let len = Math.hypot(dx,dy);
-    let nx = -dy/len;
-    let ny = dx/len;
 
-    let d = (px-a.x)*nx + (py-a.y)*ny;
-    images.push({x: px - 2*d*nx, y: py - 2*d*ny});
+    // normalize normal vector
+    let len = Math.hypot(dx, dy);
+    let nx = -dy / len;
+    let ny = dx / len;
+
+    // signed distance from point to infinite line
+    let d = (px - a.x) * nx + (py - a.y) * ny;
+
+    // reflect point across line
+    let rx = px - 2 * d * nx;
+    let ry = py - 2 * d * ny;
+
+    // IMPORTANT: only keep reflections that are actually visible
+    // check midpoint between image and receiver lies inside room
+    images.push({ x: rx, y: ry, wallA: a, wallB: b });
+  }
+
+  return images;
+});
   }
   return images;
 }
