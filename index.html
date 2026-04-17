@@ -1,184 +1,176 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2D Sound Simulation - Advanced</title>
-<style>
-  body { margin:0; display:flex; font-family:Arial; }
-  #controls { width:260px; background:#f4f4f4; padding:10px; }
-  canvas { flex:1; background:#000; cursor:grab; }
-</style>
+  <meta charset="UTF-8" />
+  <title>3D Speaker Simulator</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 8px;
+    }
+    input { width: 120px; }
+    button { margin-top: 5px; }
+  </style>
 </head>
 <body>
-<div id="controls">
-  <h3>Controls</h3>
-  <button onclick="addSpeaker()">Add Speaker</button>
-  <button onclick="resetTest()">Test Case</button>
+
+<div id="ui">
+  <div>Volume</div>
+  <input id="volume" type="range" min="0" max="1" step="0.01" value="0.5">
+
+  <div>Frequency</div>
+  <input id="freq" type="range" min="100" max="2000" step="1" value="440">
+
+  <br>
+  <button id="addSpeaker">Add Speaker</button>
 </div>
-<canvas id="canvas"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-resize();
-window.addEventListener('resize', resize);
+// ===== SCENE SETUP =====
+const scene = new THREE.Scene();
 
-let speakers = [];
-let points = [
-  {x:150,y:150},{x:650,y:150},{x:650,y:650},{x:150,y:650}
-];
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0, 2, 6);
 
-let dragging = null;
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-function resize(){
-  canvas.width = window.innerWidth - 260;
-  canvas.height = window.innerHeight;
+// Room
+const room = new THREE.Mesh(
+  new THREE.BoxGeometry(10, 5, 10),
+  new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true })
+);
+scene.add(room);
+
+// Light (optional visual clarity)
+const light = new THREE.PointLight(0xffffff, 1);
+light.position.set(5,5,5);
+scene.add(light);
+
+// ===== AUDIO SETUP =====
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+const speakers = [];
+
+function createSpeaker(x=0,y=1,z=0) {
+  // 3D object
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5,0.5,0.5),
+    new THREE.MeshBasicMaterial({ color: 0xff0000 })
+  );
+  mesh.position.set(x,y,z);
+  scene.add(mesh);
+
+  // Audio chain
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  const panner = audioCtx.createPanner();
+
+  osc.type = "sine";
+  osc.frequency.value = 440;
+
+  gain.gain.value = 0.5;
+  filter.type = "lowpass";
+
+  panner.panningModel = "HRTF";
+
+  osc.connect(filter).connect(gain).connect(panner).connect(audioCtx.destination);
+  osc.start();
+
+  const speaker = { mesh, osc, gain, filter, panner };
+  speakers.push(speaker);
+
+  return speaker;
 }
 
-function addSpeaker(){
-  speakers.push({x:300,y:300,freq:1000,vol:60});
-}
+// Initial speaker
+let selectedSpeaker = createSpeaker(1,1,0);
 
-function resetTest(){
-  speakers = [
-    {x:350,y:350,freq:80,vol:60},
-    {x:450,y:350,freq:1000,vol:60},
-    {x:400,y:250,freq:5000,vol:60},
-    {x:400,y:450,freq:8000,vol:60}
-  ];
-}
+// ===== UI =====
+const volumeSlider = document.getElementById("volume");
+const freqSlider = document.getElementById("freq");
 
-canvas.onmousedown = e => {
-  let mx = e.offsetX, my = e.offsetY;
-
-  for(let p of points){
-    if(dist(mx,my,p.x,p.y)<10){ dragging = p; return; }
-  }
-  for(let s of speakers){
-    if(dist(mx,my,s.x,s.y)<10){ dragging = s; return; }
-  }
+volumeSlider.oninput = () => {
+  if(selectedSpeaker) selectedSpeaker.gain.gain.value = volumeSlider.value;
 };
 
-canvas.onmousemove = e => {
-  if(dragging){
-    dragging.x = e.offsetX;
-    dragging.y = e.offsetY;
-  }
+freqSlider.oninput = () => {
+  if(selectedSpeaker) selectedSpeaker.osc.frequency.value = freqSlider.value;
 };
 
-canvas.onmouseup = ()=> dragging=null;
+document.getElementById("addSpeaker").onclick = () => {
+  selectedSpeaker = createSpeaker(
+    (Math.random()-0.5)*5,
+    1,
+    (Math.random()-0.5)*5
+  );
+};
 
-function dist(x1,y1,x2,y2){
-  return Math.hypot(x2-x1,y2-y1);
-}
+// ===== INTERACTION (CLICK SELECT) =====
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 
-function attenuation(freq, d){
-  let spread = 1/(d*d*0.002 + 1);
-  let absorb = Math.exp(-freq*0.00005*d);
-  return spread * absorb;
-}
+window.addEventListener("click", (event) => {
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-function reflect(px, py) {
-  // Correct image source method for line segments (specular reflection)
-  let images = [];
+  raycaster.setFromCamera(mouse, camera);
 
-  for (let i = 0; i < points.length; i++) {
-    let a = points[i];
-    let b = points[(i + 1) % points.length];
+  const meshes = speakers.map(s => s.mesh);
+  const intersects = raycaster.intersectObjects(meshes);
 
-    // line vector
-    let dx = b.x - a.x;
-    let dy = b.y - a.y;
-
-    // normalize normal vector
-    let len = Math.hypot(dx, dy);
-    let nx = -dy / len;
-    let ny = dx / len;
-
-    // signed distance from point to infinite line
-    let d = (px - a.x) * nx + (py - a.y) * ny;
-
-    // reflect point across line
-    let rx = px - 2 * d * nx;
-    let ry = py - 2 * d * ny;
-
-    // IMPORTANT: only keep reflections that are actually visible
-    // check midpoint between image and receiver lies inside room
-    images.push({ x: rx, y: ry, wallA: a, wallB: b });
+  if (intersects.length > 0) {
+    selectedSpeaker = speakers.find(s => s.mesh === intersects[0].object);
   }
-
-  return images;
 });
-  }
-  return images;
+
+// ===== AUDIO POSITION UPDATE =====
+function updateAudio() {
+  speakers.forEach(s => {
+    s.panner.positionX.value = s.mesh.position.x;
+    s.panner.positionY.value = s.mesh.position.y;
+    s.panner.positionZ.value = s.mesh.position.z;
+  });
+
+  audioCtx.listener.positionX.value = camera.position.x;
+  audioCtx.listener.positionY.value = camera.position.y;
+  audioCtx.listener.positionZ.value = camera.position.z;
 }
 
-function drawRoom(){
-  ctx.strokeStyle="#fff";
-  ctx.beginPath();
-  ctx.moveTo(points[0].x,points[0].y);
-  for(let p of points) ctx.lineTo(p.x,p.y);
-  ctx.closePath();
-  ctx.stroke();
+// ===== BASIC CAMERA CONTROL =====
+window.addEventListener("keydown", (e) => {
+  const speed = 0.3;
+  if (e.key === "w") camera.position.z -= speed;
+  if (e.key === "s") camera.position.z += speed;
+  if (e.key === "a") camera.position.x -= speed;
+  if (e.key === "d") camera.position.x += speed;
+});
 
-  for(let p of points){
-    ctx.fillStyle="#fff";
-    ctx.beginPath();
-    ctx.arc(p.x,p.y,5,0,Math.PI*2);
-    ctx.fill();
-  }
+// ===== LOOP =====
+function animate() {
+  requestAnimationFrame(animate);
+  updateAudio();
+  renderer.render(scene, camera);
 }
+animate();
 
-function color(freq){
-  if(freq<200) return [0,0,255];
-  if(freq<2000) return [0,255,0];
-  return [255,0,0];
-}
+// Resize
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 
-function drawField(){
-  let step = 8;
-  for(let x=0;x<canvas.width;x+=step){
-    for(let y=0;y<canvas.height;y+=step){
-      let total = 0;
-
-      for(let s of speakers){
-        let d = dist(x,y,s.x,s.y);
-        total += attenuation(s.freq,d) * (s.vol/100);
-
-        let imgs = reflect(s.x,s.y);
-        for(let img of imgs){
-          let rd = dist(x,y,img.x,img.y);
-          total += attenuation(s.freq,rd) * 0.5 * (s.vol/100);
-        }
-      }
-
-      if(total>0.01){
-        ctx.fillStyle = `rgba(255,255,255,${Math.min(total,0.3)})`;
-        ctx.fillRect(x,y,step,step);
-      }
-    }
-  }
-}
-
-function drawSpeakers(){
-  for(let s of speakers){
-    let [r,g,b]=color(s.freq);
-    ctx.fillStyle=`rgb(${r},${g},${b})`;
-    ctx.beginPath();
-    ctx.arc(s.x,s.y,6,0,Math.PI*2);
-    ctx.fill();
-  }
-}
-
-function loop(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawField();
-  drawRoom();
-  drawSpeakers();
-  requestAnimationFrame(loop);
-}
-
-loop();
 </script>
 </body>
 </html>
