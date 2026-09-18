@@ -5,6 +5,7 @@ import { View, speakerColor } from './view.js';
 import { FieldController } from './field-controller.js';
 import { ProbeCache, reportPaths, pathsCSV } from './analysis.js';
 import { PathInspector } from './inspection.js';
+import { sourceInk, frequencyLabel } from './visual.js';
 const $ = id => document.getElementById(id), STORAGE = 'audio-sim.scene.v2';
 let scene = preset(), storageError = '', saveTimer, toastTimer, raf = 0, uiDirty = true, lastTick = 0, drag = null, audioKey = '', audioBusy = false, pipelineDirty = true, importSequence = 0;
 try { const saved = localStorage.getItem(STORAGE); if (saved) scene = normalizeScene(JSON.parse(saved)); }
@@ -19,7 +20,7 @@ const field = new FieldController((result, fallback) => {
   $('render-status').textContent = `${result.nx} × ${result.nz} samples · ${result.elapsed.toFixed(1)} ms · ${fallback ? 'chunked fallback' : 'worker'} · cached`;
   invalidate(true);
 }, text => { $('render-status').textContent = text; });
-const freqLabel = frequency => frequency >= 1000 ? `${(frequency / 1000).toFixed(frequency % 1000 ? 1 : 0)} kHz` : `${Math.round(frequency)} Hz`;
+const freqLabel = frequencyLabel;
 const selected = () => scene.selected === 'listener' ? scene.listener : scene.speakers.find(s => s.id === scene.selected);
 function notify(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 5500); }
 function save() {
@@ -59,7 +60,10 @@ function renderUI() {
       for (const className of ['source-dot', 'source-name', 'source-frequency']) { const node = document.createElement('span'); node.className = className; row.append(node); }
       row.addEventListener('click', () => { scene.selected = source.id; changed(); }); rows.append(row);
     }
-    row.classList.toggle('active', scene.selected === source.id); row.classList.toggle('muted', !audible.has(source.id)); row.style.setProperty('--source-color', speakerColor(source));
+    row.classList.toggle('active', scene.selected === source.id); row.classList.toggle('muted', !audible.has(source.id)); row.style.setProperty('--source-color', speakerColor(source)); row.style.setProperty('--source-ink', sourceInk(source));
+    row.querySelector('.source-dot').textContent = String(scene.speakers.indexOf(source) + 1).padStart(2, '0');
+    row.title = `${source.name} · ${freqLabel(source.frequency)}`;
+    row.setAttribute('aria-label', `${source.name}, ${freqLabel(source.frequency)}, ${source.muted ? 'muted' : source.solo ? 'solo' : !audible.has(source.id) ? 'excluded by solo' : source.level + ' dB relative'}`);
     row.setAttribute('aria-pressed', scene.selected === source.id); row.querySelector('.source-name').textContent = source.name;
     row.querySelector('.source-frequency').textContent = `${freqLabel(source.frequency)} · ${source.muted ? 'muted' : source.solo ? 'SOLO' : !audible.has(source.id) ? 'excluded' : `${source.level} dB`}`;
   }
@@ -67,6 +71,13 @@ function renderUI() {
   const report = probe.get(scene), power = report.power;
   inspector.update(scene, report);
   $('listener-reading').textContent = power > 1e-18 ? `${powerToDb(power).toFixed(1)} dB rel.` : '−∞ dB rel.';
+  $('probe-reading').textContent = power > 1e-18 ? powerToDb(power).toFixed(1) : '−∞';
+  $('probe-model').textContent = scene.settings.field === 'coherent' ? 'Phase estimate · dB relative' : 'Energy estimate · dB relative';
+  $('hud-view').textContent = scene.settings.mode === '3d' ? 'ORBIT' : 'PLAN';
+  $('selection-kind').textContent = isSpeaker ? '02 / SOURCE' : '02 / LISTENER';
+  $('map-caption').textContent = scene.settings.field === 'coherent' ? 'INTERFERENCE' : 'ENERGY COVERAGE';
+  $('map-context').textContent = scene.settings.field === 'off' ? 'Map hidden. The listener probe and audio still work.' : scene.settings.field === 'coherent' ? 'Equal-frequency tones can reinforce or cancel. Contours follow sampled levels.' : 'Color shows estimated energy. Source phase is ignored in this mode.';
+  $('contours').disabled = scene.settings.field === 'off';
   $('selection-title').textContent = isSpeaker ? current.name : 'Listener';
   $('speaker-only').hidden = !isSpeaker; $('speaker-direction').hidden = !isSpeaker;
   if (isSpeaker) {
@@ -82,7 +93,10 @@ function renderUI() {
   setValue('pitch', current.pitch ?? 0); $('pitch-value').textContent = `${Math.round(current.pitch ?? 0)}°`;
   setValue('snap-grid', scene.settings.snap);
   setValue('yaw', current.yaw); $('yaw-value').textContent = `${Math.round(current.yaw)}°`;
-  $('selection-hint').textContent = isSpeaker ? 'Yaw turns horizontally; tilt aims up/down. Solo excludes other sources; mute always wins.' : 'WASD moves; Q / E turns; Page Up / Down changes selected height. Head tilt affects audio, not scalar map levels.';
+  $('frequency').setAttribute('aria-valuetext', isSpeaker ? freqLabel(current.frequency) : '');
+  for (const id of ['yaw', 'pitch']) $(id).setAttribute('aria-valuetext', `${Math.round(current[id] ?? 0)} degrees`);
+  if (isSpeaker) { $('level').setAttribute('aria-valuetext', `${current.level} dB relative at one metre`); $('cone').setAttribute('aria-valuetext', current.cone === 360 ? 'Omnidirectional' : `${current.cone} degrees`); }
+  $('selection-hint').textContent = isSpeaker ? 'Bearing turns horizontally; tilt aims up/down. Solo excludes other sources; mute always wins.' : 'WASD moves; Q / E turns; Page Up / Down changes selected height. Head tilt affects audio, not scalar map levels.';
   for (const [id, value] of [['room-width', b.width], ['room-depth', b.depth], ['room-height', scene.room.height]]) setValue(id, +value.toFixed(2));
   for (const material of ['wall', 'floor', 'ceiling']) setValue(`${material}-material`, scene.room[material]);
   setValue('air-loss', scene.room.airLoss); setValue('slice', scene.settings.slice); $('slice').max = scene.room.height - 0.1;
@@ -135,6 +149,7 @@ async function toggleAudio() {
 }
 function on(id, event, handler) { $(id).addEventListener(event, handler); }
 for (const [id, handler] of Object.entries({ 'mode-2d': () => setMode('2d'), 'mode-3d': () => setMode('3d'), fit, add: () => addSpeaker(), duplicate: () => addSpeaker(true), remove: removeSelected, undo, redo, 'audio-toggle': toggleAudio, 'select-listener': () => { scene.selected = 'listener'; changed(); }, mute: () => { const s = selected(); if (scene.selected !== 'listener') { s.muted = !s.muted; changed(true); } }, 'zoom-in': () => { scene.view.zoom = clamp(scene.view.zoom * 1.2, 0.4, 3); changed(true); }, 'zoom-out': () => { scene.view.zoom = clamp(scene.view.zoom / 1.2, 0.4, 3); changed(true); } })) on(id, 'click', handler);
+on('contours', 'change', event => { view.showContours = event.target.checked; invalidate(true); });
 on('solo', 'click', () => { if (scene.selected !== 'listener') { selected().solo = !selected().solo; changed(true); } });
 on('path-inspector', 'toggle', () => invalidate(true));
 on('snap-grid', 'change', event => { scene.settings.snap = Number(event.target.value); changed(true); });
@@ -256,7 +271,7 @@ const observer = new ResizeObserver(() => { view.resize(); invalidate(); }); obs
 window.addEventListener('resize', () => { view.resize(); invalidate(); });
 window.addEventListener('pagehide', () => { if (saveTimer) { clearTimeout(saveTimer); try { localStorage.setItem(STORAGE, JSON.stringify(scene)); } catch {} } audio.pause({ immediate: true }).catch(() => {}); });
 export function getDiagnostics() {
-  return { scene: copy(scene), audio: audio.diagnostics(), field: { jobs: field.jobs, completed: field.completed, busy: Boolean(pipelineDirty || field.running || field.pending), worker: Boolean(field.worker), stale: Boolean(view.stale), elapsed: fieldInfo?.elapsed ?? null, nx: fieldInfo?.nx ?? null, nz: fieldInfo?.nz ?? null, undersampled: fieldInfo?.undersampled ?? false }, draws: view.draws, probeComputations: probe.computations,
+  return { scene: copy(scene), audio: audio.diagnostics(), field: { jobs: field.jobs, completed: field.completed, busy: Boolean(pipelineDirty || field.running || field.pending), worker: Boolean(field.worker), stale: Boolean(view.stale), elapsed: fieldInfo?.elapsed ?? null, nx: fieldInfo?.nx ?? null, nz: fieldInfo?.nz ?? null, undersampled: fieldInfo?.undersampled ?? false }, draws: view.draws, probeComputations: probe.computations, visual: { contours: view.showContours, contourBuilds: view.contourBuilds, contourSegments: view.contourSegments?.reduce((n, g) => n + g.segments.length, 0) ?? 0 },
     corners: scene.room.vertices.map(v => view.proj?.project({ ...v, y: 0 })),
     screen: Object.fromEntries([...scene.speakers, { ...scene.listener, id: 'listener' }].map(s => [s.id, view.proj?.project(scene.settings.mode === '3d' ? s : { ...s, y: 0 })])) };
 }

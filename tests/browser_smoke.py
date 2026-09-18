@@ -56,7 +56,7 @@ def strip_module(text):
 
 def boot(page):
     if IN_MEMORY:
-        names = ["model", "acoustics", "audio", "projection", "view", "field-controller", "analysis", "inspection", "app"]
+        names = ["model", "acoustics", "audio", "projection", "visual", "view", "field-controller", "analysis", "inspection", "app"]
         source = "\n".join(strip_module((ROOT / "src" / f"{n}.js").read_text()) for n in names)
         worker = "\n".join(strip_module((ROOT / "src" / f"{n}.js").read_text())
                            for n in ["model", "acoustics", "field-worker"])
@@ -323,6 +323,9 @@ def run():
         from browser_extensions import extended_checks
         extended_checks(page, check, require, diagnostics, settle, choose_preset,
                         edit_number, drag_object, IN_MEMORY, OUTPUT)
+
+        from browser_visual import visual_checks
+        visual_checks(page, check, require, diagnostics, settle, choose_preset, OUTPUT)
 
         choose_preset(page)
         page.wait_for_timeout(5600)

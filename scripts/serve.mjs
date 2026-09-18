@@ -7,7 +7,7 @@ const port = Number(process.env.PORT ?? 8080), host = process.env.HOST || '127.0
 const base = process.env.BASE_PATH || '/';
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('PORT must be an integer from 0 to 65535.');
 if (!/^\/(?:[\w-]+\/)*$/.test(base)) throw new Error('BASE_PATH must be / or a slash-terminated path such as /audio-sim/.');
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
+const types = { '.md': 'text/plain; charset=utf-8', '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const withinRoot = file => file === root || file.startsWith(root + sep);
 const server = createServer(async (request, response) => {
   try {

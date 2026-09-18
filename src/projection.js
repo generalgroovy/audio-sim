@@ -10,9 +10,9 @@ export function projection(scene, width, height) {
   const corners = scene.room.vertices.flatMap(p => [raw({ ...p, y: 0 }), raw({ ...p, y: is3d ? scene.room.height : 0 })]);
   const minX = Math.min(...corners.map(p => p.x)), maxX = Math.max(...corners.map(p => p.x));
   const minY = Math.min(...corners.map(p => p.y)), maxY = Math.max(...corners.map(p => p.y));
-  const scale = Math.max(1, Math.min((width - 100) / (maxX - minX), (height - 120) / (maxY - minY))) * view.zoom;
+  const scale = Math.max(1, Math.min((width - 100) / (maxX - minX), (height - 160) / (maxY - minY))) * view.zoom;
   const ox = width / 2 - (minX + maxX) / 2 * scale + view.panX;
-  const oy = height / 2 - (minY + maxY) / 2 * scale + view.panY;
+  const oy = (height + 60) / 2 - (minY + maxY) / 2 * scale + view.panY;
   return {
     scale, is3d, cy, sy, sp, cp,
     project(p) { const r = raw(p); return { x: ox + r.x * scale, y: oy + r.y * scale, depth: (-(p.x - cx) * sy + (p.z - cz) * cy) * cp + p.y * sp }; },

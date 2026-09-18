@@ -1,6 +1,6 @@
 {
   "name": "audio-sim",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
   "description": "Dependency-free 2D/3D spatial sound sandbox",

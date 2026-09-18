@@ -33,10 +33,11 @@ export class PathInspector {
     ctx.strokeStyle = '#425469'; ctx.beginPath(); ctx.moveTo(10, h - 22); ctx.lineTo(w - 12, h - 22); ctx.stroke();
     for (const path of paths) {
       const x = 10 + path.delay / max * (w - 22), y = (1 - Math.max(0, Math.min(1, (path.gainDb + 80) / 80))) * (h - 34) + 8;
-      ctx.strokeStyle = path.kind === 'direct' ? '#65d7c2' : '#eec582';
+      ctx.strokeStyle = path.kind === 'direct' ? '#87e0ca' : '#ffc184';
+      ctx.setLineDash(path.kind === 'direct' ? [] : [3,2]);
       ctx.beginPath(); ctx.moveTo(x, h - 22); ctx.lineTo(x, y); ctx.stroke();
     }
-    ctx.fillStyle = '#91a0b3'; ctx.font = '10px system-ui'; ctx.textAlign = 'left'; ctx.fillText('0 ms', 10, h - 6);
+    ctx.setLineDash([]); ctx.fillStyle = '#b0c4c8'; ctx.font = '10px system-ui'; ctx.textAlign = 'left'; ctx.fillText('0 ms', 10, h - 6);
     ctx.textAlign = 'right'; ctx.fillText(`${max.toFixed(1)} ms`, w - 12, h - 6);
   }
 }
