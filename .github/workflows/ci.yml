@@ -1,16 +1,28 @@
 name: Validate Audio Sim
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   unit:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [20, 22]
+        include:
+          - os: ubuntu-latest
+            node: 20
+          - os: ubuntu-latest
+            node: 22
+          - os: ubuntu-latest
+            node: 24
+          - os: windows-latest
+            node: 22
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,6 +32,7 @@ jobs:
       - run: npm test
   browser:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +43,10 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install playwright==1.57.0
       - run: python -m playwright install --with-deps chromium
+      - run: python -m py_compile tests/browser_smoke.py tests/browser_extensions.py
       - run: python tests/browser_smoke.py
+        env:
+          SIM_TEST_BASE: /audio-sim/
       - uses: actions/upload-artifact@v4
         if: always()
         with:

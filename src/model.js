@@ -5,7 +5,20 @@ export const TAU = Math.PI * 2;
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export const radians = degrees => degrees * Math.PI / 180;
 export const copy = value => JSON.parse(JSON.stringify(value));
-export const heading = yaw => ({ x: Math.sin(radians(yaw)), y: 0, z: -Math.cos(radians(yaw)) });
+export const heading = (yaw, pitch = 0) => ({ x: Math.sin(radians(yaw)) * Math.cos(radians(pitch)), y: Math.sin(radians(pitch)), z: -Math.cos(radians(yaw)) * Math.cos(radians(pitch)) });
+// No roll: up stays orthogonal to forward, including at a ±90° vertical tilt.
+export const listenerUp = (yaw, pitch = 0) => ({ x: -Math.sin(radians(yaw)) * Math.sin(radians(pitch)), y: Math.cos(radians(pitch)), z: Math.cos(radians(yaw)) * Math.sin(radians(pitch)) });
+export const activeSources = scene => {
+  const solo = scene.speakers.some(s => s.solo);
+  return scene.speakers.filter(s => !s.muted && (!solo || s.solo));
+};
+export function snapCoordinate(value, step = 0) { return step > 0 ? +(Math.round(value / step) * step).toFixed(6) : value; }
+export function placePoint(point, room, step = 0, axes = ['x', 'z']) {
+  const placed = { ...point };
+  for (const axis of axes) placed[axis] = snapCoordinate(point[axis], step);
+  return constrainPoint(placed, room); // Boundary clearance takes priority over the grid.
+}
+
 export const distance = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
 export const MATERIALS = Object.freeze({
   hard: { name: 'Hard / reflective', absorption: [0.04, 0.06, 0.08] },
@@ -61,7 +74,7 @@ export function constrainPoint(point, room) {
   return out;
 }
 export function speaker(id, x = 0, z = 0, frequency = 440, name = `Speaker ${id}`) {
-  return { id: String(id), name, x, y: 1.2, z, frequency, level: -12, yaw: 0, cone: 360, phase: 0, muted: false };
+  return { id: String(id), name, x, y: 1.2, z, frequency, level: -12, yaw: 0, pitch: 0, cone: 360, phase: 0, muted: false, solo: false };
 }
 export function preset(name = 'reference') {
   const room = { vertices: rectangle(), height: 3.2, wall: 'mixed', floor: 'hard', ceiling: 'mixed', airLoss: 0 };
@@ -69,8 +82,22 @@ export function preset(name = 'reference') {
   if (name === 'stereo') speakers = [speaker('1', -2, -2, 440, 'Left'), speaker('2', 2, -2, 440, 'Right')].map(s => ({ ...s, yaw: 180, cone: 110 }));
   if (name === 'interference') speakers = [speaker('1', -1, 0, 80, 'Phase A'), { ...speaker('2', 1, 0, 80, 'Phase B'), phase: 180 }];
   if (name === 'empty') speakers = [];
-  return { version: VERSION, room, speakers, listener: { x: 0, y: 1.2, z: 2.8, yaw: 0 }, selected: speakers[0]?.id ?? 'listener',
-    settings: { mode: '2d', field: name === 'interference' ? 'coherent' : 'energy', reflections: name !== 'interference', slice: 1.2, quality: 'balanced', paths: true, animate: false, editRoom: false, master: -24 },
+  const surround = ['surround51', 'surround71', 'immersive'].includes(name);
+  if (surround) {
+    const layout = [['L', -30], ['R', 30], ['C', 0], ['Ls', -110], ['Rs', 110]];
+    if (name !== 'surround51') layout.push(['Lr', -150], ['Rr', 150]);
+    speakers = layout.map(([label, yaw], i) => {
+      const v = heading(yaw);
+      return { ...speaker(String(i + 1), v.x * 3, v.z * 3, 440, label), yaw: ((yaw + 360) % 360) - 180, cone: 110 };
+    });
+    speakers.push({ ...speaker(String(speakers.length + 1), 0.9, -2.5, 80, 'Sub'), y: 0.35 });
+    if (name === 'immersive') for (const [label, x, z] of [['Top LF', -2, -1.8], ['Top RF', 2, -1.8], ['Top LR', -2, 1.8], ['Top RR', 2, 1.8]]) {
+      speakers.push({ ...speaker(String(speakers.length + 1), x, z, 440, label), y: 2.8,
+        yaw: Math.atan2(-x, z) * 180 / Math.PI, pitch: Math.atan2(1.2 - 2.8, Math.hypot(x, z)) * 180 / Math.PI, cone: 110 });
+    }
+  }
+  return { version: VERSION, room, speakers, listener: { x: 0, y: 1.2, z: surround ? 0 : 2.8, yaw: 0, pitch: 0 }, selected: speakers[0]?.id ?? 'listener',
+    settings: { mode: '2d', field: name === 'interference' ? 'coherent' : 'energy', reflections: name !== 'interference', slice: 1.2, quality: 'balanced', paths: true, animate: false, editRoom: false, master: -24, snap: 0 },
     view: { yaw: -32, pitch: 48, zoom: 1, panX: 0, panY: 0 } };
 }
 function numeric(value, fallback, min, max) { return clamp(typeof value === 'number' && Number.isFinite(value) ? value : fallback, min, max); }
@@ -89,12 +116,12 @@ export function normalizeScene(input) {
     while (used.has(id)) id = `${baseId.slice(0, 20)}_${i}_${suffix++}`;
     used.add(id);
     const base = speaker(id), name = typeof s.name === 'string' ? s.name.trim().slice(0, 48) : base.name;
-    return { ...base, id, name: name || base.name, ...constrainPoint(s, room), frequency: numeric(s.frequency, 440, 20, 16000), level: numeric(s.level, -12, -60, 0), yaw: numeric(s.yaw, 0, -180, 180), cone: numeric(s.cone, 360, 20, 360), phase: numeric(s.phase, 0, 0, 360), muted: s.muted === true };
+    return { ...base, id, name: name || base.name, ...constrainPoint(s, room), frequency: numeric(s.frequency, 440, 20, 16000), level: numeric(s.level, -12, -60, 0), yaw: numeric(s.yaw, 0, -180, 180), pitch: numeric(s.pitch, 0, -90, 90), cone: numeric(s.cone, 360, 20, 360), phase: numeric(s.phase, 0, 0, 360), muted: s.muted === true, solo: s.solo === true };
   });
-  const listener = { ...constrainPoint(input.listener ?? defaults.listener, room), yaw: numeric(input.listener?.yaw, 0, -180, 180) };
+  const listener = { ...constrainPoint(input.listener ?? defaults.listener, room), yaw: numeric(input.listener?.yaw, 0, -180, 180), pitch: numeric(input.listener?.pitch, 0, -90, 90) };
   const s = input.settings ?? {}, v = input.view ?? {};
   return { version: VERSION, room, speakers, listener, selected: used.has(input.selected) ? input.selected : 'listener',
-    settings: { mode: choice(s.mode, ['2d', '3d'], '2d'), field: choice(s.field, ['energy', 'coherent', 'off'], 'energy'), reflections: s.reflections !== false, slice: numeric(s.slice, 1.2, 0.1, room.height - 0.1), quality: choice(s.quality, ['fast', 'balanced', 'fine'], 'balanced'), paths: s.paths !== false, animate: s.animate === true, editRoom: s.editRoom === true, master: numeric(s.master, -24, -60, -6) },
+    settings: { mode: choice(s.mode, ['2d', '3d'], '2d'), field: choice(s.field, ['energy', 'coherent', 'off'], 'energy'), reflections: s.reflections !== false, slice: numeric(s.slice, 1.2, 0.1, room.height - 0.1), quality: choice(s.quality, ['fast', 'balanced', 'fine'], 'balanced'), paths: s.paths !== false, animate: s.animate === true, editRoom: s.editRoom === true, master: numeric(s.master, -24, -60, -6), snap: choice(s.snap, [0, 0.1, 0.25, 0.5, 1], 0) },
     view: { yaw: numeric(v.yaw, -32, -180, 180), pitch: numeric(v.pitch, 48, 18, 82), zoom: numeric(v.zoom, 1, 0.4, 3), panX: numeric(v.panX, 0, -1200, 1200), panY: numeric(v.panY, 0, -1200, 1200) } };
 }
 export function resizeRoom(scene, width, depth, height) {

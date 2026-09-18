@@ -29,3 +29,33 @@ test('worker module computes and transfers results on an actual background threa
   try { const result = await new Promise((resolve, reject) => { worker.once('message', resolve); worker.once('error', reject); worker.postMessage({ id: 7, scene: s }); }); assert.equal(result.id, 7); assert.deepEqual(result.result.values, expected.values); }
   finally { await worker.terminate(); }
 });
+
+test('an unexpected worker response cannot release the current in-flight slot', () => {
+  const results = [], c = new FieldController(r => results.push(r), () => {}, MockWorker);
+  try {
+    c.request(preset()); const running = c.running;
+    MockWorker.instance.finish({ id: 999, result: 'unrelated' });
+    assert.equal(c.running, running); assert.deepEqual(results, []);
+  } finally { c.dispose(); }
+});
+test('silent worker watchdog recovers through the chunked solver', async () => {
+  let c;
+  try {
+    const result = await new Promise(resolve => {
+      c = new FieldController(resolve, () => {}, MockWorker, { timeout: 15 }); c.request(preset());
+    });
+    assert.ok(result.values.length); assert.equal(c.fallbackReason, 'Worker timed out'); assert.equal(c.worker, null);
+  } finally { c?.dispose(); }
+});
+test('terminated worker late replies cannot replace fallback output', async () => {
+  const results = []; let c;
+  try {
+    const done = new Promise(resolve => {
+      c = new FieldController(r => { results.push(r); resolve(); }, () => {}, MockWorker); c.request(preset());
+      const oldCallback = MockWorker.instance.onmessage;
+      MockWorker.instance.onerror({ preventDefault() {} });
+      oldCallback({ data: { id: c.latest, result: 'late' } });
+    });
+    await done; assert.equal(results.length, 1); assert.ok(results[0].values);
+  } finally { c?.dispose(); }
+});

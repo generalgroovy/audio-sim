@@ -2,9 +2,9 @@
 
 ## Coordinates and source level
 
-Positions are metres; +Y is up; heading 0° faces −Z and 90° faces +X. A room is a closed prism with a strictly convex, counter-clockwise 3–12-corner footprint, horizontal floor and ceiling. Editing currently moves existing corners; importing can supply another valid corner count. Concave rooms, holes and interior obstacles are intentionally unsupported so visible first-order paths can be validated reliably.
+Positions are metres; +Y is up; heading 0° faces −Z and 90° faces +X. Positive pitch tilts upward and negative pitch downward. A source can point vertically; the listener forward/up vectors remain orthonormal at every tilt, including ±90°. Keyboard WASD movement stays on the horizontal plane regardless of head tilt. A room is a closed prism with a strictly convex, counter-clockwise 3–12-corner footprint, horizontal floor and ceiling. Editing currently moves existing corners; importing can supply another valid corner count. Concave rooms, holes and interior obstacles are intentionally unsupported so visible first-order paths can be validated reliably.
 
-Each source is a stationary sine oscillator with frequency, phase, direction and relative level. A level L gives reference pressure amplitude `10^(L/20)`. The distance amplitude factor is `1/max(1,r)`, where r is path length in metres. Thus energy falls as inverse-square beyond 1 m; the near field is clamped rather than singular. This is not calibrated sound pressure level (SPL).
+Solo filters audible sources before both map/probe and audio evaluation; mute takes precedence. Each source is a stationary sine oscillator with frequency, phase, direction and relative level. A level L gives reference pressure amplitude `10^(L/20)`. The distance amplitude factor is `1/max(1,r)`, where r is path length in metres. Thus energy falls as inverse-square beyond 1 m; the near field is clamped rather than singular. This is not calibrated sound pressure level (SPL).
 
 Directional sources use an idealized cone: full gain within 65% of the outer half-angle, a linear pressure transition, and 0.08 rear gain. An omnidirectional 360° source bypasses the cone. This is a teaching control, not a measured loudspeaker directivity dataset.
 
@@ -44,3 +44,11 @@ Native API behavior is documented in the [Web Audio specification](https://webau
 No higher-order bounces, diffraction, scattering, transmission through walls, interior obstacles, late reverberation, modal/FDTD/FEM solution, frequency-dependent complex boundary impedance, volumetric acoustic rendering, perspective/first-person camera or calibration. The 3D view is an efficient orthographic Canvas schematic with explicit XYZ geometry, not a general-purpose WebGL renderer. Animated path dots are slowed explanatory markers, not sound-speed wave fronts.
 
 For actual room design, those omitted effects and real source/material data can matter substantially. Use this app to explore the stated simplified relationships, not to certify treatment choices or exposure levels.
+
+## Receiver inspection and exports (2.1)
+
+Listener arrivals uses the same finite `pathsFor` results as preview audio. Rows report path length, `length/343*1000` milliseconds and `20*log10(pathGain)` relative amplitude. The timing plot omits signed/complex reflection phase, binaural filtering and device latency: it is an explanatory arrival schematic, not a measured or calibrated impulse response. Selecting the listener includes every currently audible source; selecting a source isolates that source's report, without implicitly changing mute/solo.
+
+The report caches geometry/source/frequency/phase dependencies and receiver XYZ. Camera changes, listener head orientation, source labels, output level and map height/quality do not change scalar path energies or geometric delays and therefore do not rebuild that analysis. Energy mode also ignores phase-only edits for cache invalidation. Reports have fixed snapshot coordinates so later edits cannot mutate an already-returned result.
+
+2D cone artwork shows horizontal bearing; 3D shows an oriented cone guide using both yaw and pitch. These are orientation guides, not additional acoustical boundaries. A room-corner drag freezes its screen projection until release; pointer placement can snap to a metre grid, with valid room clearance taking precedence. These editor behaviors do not modify the acoustic equations.

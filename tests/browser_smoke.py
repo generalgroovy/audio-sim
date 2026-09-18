@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(os.environ.get("SIM_RESULTS", str(ROOT / "test-results")))
 IN_MEMORY = os.environ.get("SIM_IN_MEMORY") == "1"
 PORT = int(os.environ.get("SIM_TEST_PORT", "8792"))
+BASE = os.environ.get("SIM_TEST_BASE", "/")
+TEST_URL = f"http://127.0.0.1:{PORT}{BASE}"
 
 
 @contextmanager
@@ -28,13 +30,13 @@ def server():
     try:
         if not IN_MEMORY:
             process = subprocess.Popen(["node", "scripts/serve.mjs"], cwd=ROOT,
-                                       env={**os.environ, "PORT": str(PORT)},
+                                       env={**os.environ, "PORT": str(PORT), "BASE_PATH": BASE},
                                        stdout=subprocess.DEVNULL)
             for _ in range(100):
                 if process.poll() is not None:
                     raise RuntimeError("Test HTTP server exited; choose another SIM_TEST_PORT.")
                 try:
-                    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/", timeout=1) as reply:
+                    with urllib.request.urlopen(TEST_URL, timeout=1) as reply:
                         if reply.status == 200:
                             break
                 except OSError:
@@ -54,7 +56,7 @@ def strip_module(text):
 
 def boot(page):
     if IN_MEMORY:
-        names = ["model", "acoustics", "audio", "projection", "view", "field-controller", "app"]
+        names = ["model", "acoustics", "audio", "projection", "view", "field-controller", "analysis", "inspection", "app"]
         source = "\n".join(strip_module((ROOT / "src" / f"{n}.js").read_text()) for n in names)
         worker = "\n".join(strip_module((ROOT / "src" / f"{n}.js").read_text())
                            for n in ["model", "acoustics", "field-worker"])
@@ -72,7 +74,7 @@ def boot(page):
         }""", worker)
         page.add_script_tag(content=source + "\nwindow.__diagnostics = getDiagnostics;")
     else:
-        page.goto(f"http://127.0.0.1:{PORT}/", wait_until="networkidle")
+        page.goto(TEST_URL, wait_until="networkidle")
         page.evaluate("async () => { window.__diagnostics = (await import('./src/app.js')).getDiagnostics; }")
     settle(page)
 
@@ -318,6 +320,10 @@ def run():
             settle(page)
             check("native localStorage survives a full reload", lambda: require(len(diagnostics(page)["scene"]["speakers"]) == 16))
 
+        from browser_extensions import extended_checks
+        extended_checks(page, check, require, diagnostics, settle, choose_preset,
+                        edit_number, drag_object, IN_MEMORY, OUTPUT)
+
         choose_preset(page)
         page.wait_for_timeout(5600)
         page.set_viewport_size({"width": 390, "height": 844})
@@ -338,7 +344,7 @@ def run():
         if not IN_MEMORY:
             check("native module worker is active", lambda: require(worker))
         report = {"mode": "in-memory (storage shim, no HTTP/module-loading coverage)" if IN_MEMORY else "HTTP / native ESM",
-                  "browser": browser.version, "worker_active": worker, "passed": len(results), "checks": results, "page_errors": errors}
+                  "url_path": BASE if not IN_MEMORY else None, "browser": browser.version, "worker_active": worker, "passed": len(results), "checks": results, "page_errors": errors}
         (OUTPUT / "browser-report.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
         browser.close()

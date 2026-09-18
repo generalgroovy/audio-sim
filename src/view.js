@@ -1,4 +1,4 @@
-import { bounds, heading, radians, TAU } from './model.js';
+import { bounds, heading, listenerUp, activeSources, radians, TAU } from './model.js';
 import { pathsFor } from './acoustics.js';
 import { projection } from './projection.js';
 export const speakerColor = s => s.frequency < 200 ? '#aa9af7' : s.frequency < 2000 ? '#65d7c2' : s.frequency < 6000 ? '#f3c779' : '#f194a6';
@@ -18,7 +18,7 @@ export class View {
     this.canvas.width = Math.round(this.width * dpr); this.canvas.height = Math.round(this.height * dpr); this.dpr = dpr;
   }
   setField(field) {
-    this.field = field; this.texture.width = field.nx; this.texture.height = field.nz;
+    this.field = field; this.stale = false; this.texture.width = field.nx; this.texture.height = field.nz;
     const context = this.texture.getContext('2d'), image = context.createImageData(field.nx, field.nz);
     for (let i = 0; i < field.values.length; i++) {
       const db = field.values[i]; if (!Number.isFinite(db)) continue;
@@ -28,7 +28,7 @@ export class View {
   }
   draw(scene, time = 0) {
     this.draws++; this.scene = scene;
-    const ctx = this.ctx, p = this.proj = projection(scene, this.width, this.height), room = scene.room, settings = scene.settings;
+    const ctx = this.ctx, p = this.proj = this.fixedProjection ?? projection(scene, this.width, this.height), room = scene.room, settings = scene.settings;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); ctx.fillStyle = '#0c121b'; ctx.fillRect(0, 0, this.width, this.height);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.font = '12px system-ui';
     const path = points => { ctx.beginPath(); points.forEach((v, i) => { const s = p.project(v); i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y); }); };
@@ -43,7 +43,7 @@ export class View {
       });
     }
     const field = this.field;
-    if (settings.field !== 'off' && field) {
+    if (settings.field !== 'off' && field && !this.stale) {
       ctx.save(); path(outline(p.is3d ? settings.slice : 0)); ctx.closePath(); ctx.clip();
       const y = p.is3d ? settings.slice : 0;
       const a = p.project({ x: field.minX, y, z: field.minZ }), b = p.project({ x: field.minX + field.width, y, z: field.minZ }), c = p.project({ x: field.minX, y, z: field.minZ + field.depth });
@@ -75,16 +75,28 @@ export class View {
         }
       }
     }
-    if (selected && selected.cone < 360) {
+    if (selected && selected.cone < 360 && p.is3d) {
+      const forward = heading(selected.yaw, selected.pitch), up = listenerUp(selected.yaw, selected.pitch), right = heading(selected.yaw + 90);
+      const angle = radians(selected.cone / 2), rim = [];
+      for (let i = 0; i <= 24; i++) {
+        const theta = i / 24 * TAU, point = {};
+        for (const axis of ['x', 'y', 'z']) point[axis] = selected[axis] + 1.5 * (forward[axis] * Math.cos(angle) + Math.sin(angle) * (right[axis] * Math.cos(theta) + up[axis] * Math.sin(theta)));
+        rim.push(point);
+      }
+      line(rim, `${speakerColor(selected)}88`, 1);
+      for (const i of [0, 6, 12, 18]) line([selected, rim[i]], `${speakerColor(selected)}55`, 1);
+    }
+    if (selected && selected.cone < 360 && !p.is3d) {
       const at = { ...selected, y: p.is3d ? selected.y : 0 }, points = [at];
       for (let i = 0; i <= 32; i++) { const angle = radians(selected.yaw - selected.cone / 2 + selected.cone * i / 32); points.push({ x: at.x + Math.sin(angle) * 1.5, y: at.y, z: at.z - Math.cos(angle) * 1.5 }); }
       ctx.save(); path(outline(at.y)); ctx.closePath(); ctx.clip(); polygon(points, `${speakerColor(selected)}22`, `${speakerColor(selected)}66`); ctx.restore();
     }
     const objects = [...scene.speakers, { ...scene.listener, id: 'listener', listener: true }];
     objects.sort((a, b) => p.project(a).depth - p.project(b).depth);
+    const audible = new Set(activeSources(scene).map(s => s.id));
     for (const s of objects) {
       const at = p.project(p.is3d ? s : { ...s, y: 0 }), color = s.listener ? '#e5ecf5' : speakerColor(s), active = s.id === scene.selected;
-      ctx.globalAlpha = s.muted ? 0.38 : 1;
+      ctx.globalAlpha = !s.listener && !audible.has(s.id) ? 0.38 : 1;
       if (p.is3d) {
         line([{ ...s, y: 0 }, s], `${color}66`, 1, [3, 4]);
         const bottom = p.project({ ...s, y: 0 }); ctx.fillStyle = '#00000040'; ctx.beginPath(); ctx.ellipse(bottom.x, bottom.y, 13, 5, 0, 0, TAU); ctx.fill();
@@ -101,8 +113,8 @@ export class View {
         polygon([cube(-1, 1, low), cube(1, 1, low), cube(1, 1, top), cube(-1, 1, top)], '#233749', color);
         polygon([cube(-1, -1, top), cube(1, -1, top), cube(1, 1, top), cube(-1, 1, top)], color);
       } else { ctx.fillStyle = '#0b1825'; ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(at.x - 9, at.y - 12, 18, 24, 4); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(at.x, at.y + 3, 4.5, 0, TAU); ctx.stroke(); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(at.x, at.y - 6, 2, 0, TAU); ctx.fill(); }
-      const forward = heading(s.yaw), tip = p.project({ x: s.x + forward.x * 0.65, y: p.is3d ? s.y : 0, z: s.z + forward.z * 0.65 });
-      line([p.is3d ? s : { ...s, y: 0 }, { x: s.x + forward.x * 0.65, y: p.is3d ? s.y : 0, z: s.z + forward.z * 0.65 }], color, 1.5);
+      const forward = heading(s.yaw, s.pitch), tip = p.project({ x: s.x + forward.x * 0.65, y: p.is3d ? s.y + forward.y * 0.65 : 0, z: s.z + forward.z * 0.65 });
+      line([p.is3d ? s : { ...s, y: 0 }, { x: s.x + forward.x * 0.65, y: p.is3d ? s.y + forward.y * 0.65 : 0, z: s.z + forward.z * 0.65 }], color, 1.5);
       ctx.fillStyle = color; ctx.beginPath(); ctx.arc(tip.x, tip.y, 2, 0, TAU); ctx.fill();
       const label = s.listener ? 'LISTENER' : s.name, w = ctx.measureText(label).width;
       ctx.fillStyle = '#0c121be8'; ctx.beginPath(); ctx.roundRect(at.x - w / 2 - 7, at.y + 23, w + 14, 21, 5); ctx.fill();
@@ -112,6 +124,27 @@ export class View {
     ctx.textAlign = 'left'; ctx.fillStyle = '#8b9aad'; ctx.font = '11px system-ui';
     ctx.fillText(p.is3d ? 'ORTHOGRAPHIC 3D · X / Y / Z' : 'TOP-DOWN · X / Z', 22, this.height - 24);
     ctx.textAlign = 'right'; ctx.fillText('1 grid square = 1 m', this.width - 22, this.height - 24);
+  }
+  snapshot(scene) {
+    this.draw(scene, performance.now());
+    const canvas = document.createElement('canvas');
+    canvas.width = this.canvas.width; canvas.height = this.canvas.height;
+    const ctx = canvas.getContext('2d'); ctx.drawImage(this.canvas, 0, 0);
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const w = Math.min(345, this.width - 24), b = bounds(scene.room.vertices);
+    ctx.fillStyle = '#0c121bed'; ctx.fillRect(12, 12, w, scene.settings.field === 'off' ? 66 : 100);
+    ctx.textAlign = 'left'; ctx.font = '12px system-ui'; ctx.fillStyle = '#e4ebf4';
+    ctx.fillText(`Audio Sim 2.1 · ${scene.settings.mode === '3d' ? '3D orthographic' : '2D plan'}`, 23, 32);
+    ctx.font = '10px system-ui'; ctx.fillStyle = '#adbbca';
+    ctx.fillText(`${b.width.toFixed(1)} × ${b.depth.toFixed(1)} × ${scene.room.height.toFixed(1)} m · ${scene.speakers.length} sources`, 23, 49);
+    if (scene.settings.field !== 'off') {
+      ctx.fillText(`${scene.settings.field === 'coherent' ? 'Phase interference' : 'Energy coverage'} · slice ${scene.settings.slice.toFixed(1)} m`, 23, 66);
+      const gradient = ctx.createLinearGradient(23, 0, w, 0);
+      ramp.forEach((color, i) => gradient.addColorStop(i / (ramp.length - 1), `rgb(${color.join(',')})`));
+      ctx.fillStyle = gradient; ctx.fillRect(23, 75, w - 22, 5); ctx.fillStyle = '#adbbca';
+      ctx.fillText('−60', 23, 94); ctx.textAlign = 'right'; ctx.fillText('0 dB relative · not calibrated SPL', w, 94);
+    } else ctx.fillText('Map off · geometric room view', 23, 66);
+    return canvas;
   }
   hit(x, y) {
     const scene = this.scene, p = this.proj; if (!scene || !p) return null;

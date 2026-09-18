@@ -1,15 +1,18 @@
-import { preset, normalizeScene, copy, bounds, MATERIALS, MAX_SPEAKERS, speaker, constrainPoint, constrainScene, validRoom, rectangle, resizeRoom, clamp, heading, History } from './model.js';
-import { prepare, samplePower, powerToDb } from './acoustics.js';
+import { preset, normalizeScene, copy, bounds, MATERIALS, MAX_SPEAKERS, speaker, constrainPoint, constrainScene, validRoom, rectangle, resizeRoom, clamp, heading, History, activeSources, placePoint, snapCoordinate } from './model.js';
+import { powerToDb } from './acoustics.js';
 import { AudioEngine } from './audio.js';
 import { View, speakerColor } from './view.js';
 import { FieldController } from './field-controller.js';
+import { ProbeCache, reportPaths, pathsCSV } from './analysis.js';
+import { PathInspector } from './inspection.js';
 const $ = id => document.getElementById(id), STORAGE = 'audio-sim.scene.v2';
-let scene = preset(), storageError = '', saveTimer, toastTimer, raf = 0, uiDirty = true, lastTick = 0, drag = null, audioKey = '', audioBusy = false;
+let scene = preset(), storageError = '', saveTimer, toastTimer, raf = 0, uiDirty = true, lastTick = 0, drag = null, audioKey = '', audioBusy = false, pipelineDirty = true, importSequence = 0;
 try { const saved = localStorage.getItem(STORAGE); if (saved) scene = normalizeScene(JSON.parse(saved)); }
 catch { storageError = 'Stored scene could not be loaded. Using the reference scene; Import / Export remains available.'; }
 // An animation never starts unexpectedly after reopening a page.
 scene.settings.animate = false;
-const history = new History(scene), audio = new AudioEngine(), view = new View($('scene')), keys = new Set();
+const history = new History(scene), audio = new AudioEngine(undefined, { onStateChange: () => invalidate(true) }), view = new View($('scene')), keys = new Set();
+const probe = new ProbeCache(), inspector = new PathInspector($('path-inspector'));
 let fieldInfo = null;
 const field = new FieldController((result, fallback) => {
   view.setField(result); fieldInfo = result;
@@ -25,13 +28,20 @@ function save() {
 }
 function commit() { history.push(scene); save(); invalidate(true); }
 function changed(shouldCommit = false) {
+  pipelineDirty = true; audio.scene = scene;
+  invalidate(true); if (shouldCommit) commit();
+}
+function flushChanges() {
+  if (!pipelineDirty) return;
+  pipelineDirty = false;
   const key = JSON.stringify([scene.room, scene.listener, scene.speakers.map(({ name, ...s }) => s), scene.settings.reflections, scene.settings.master]);
   if (key !== audioKey) { audioKey = key; audio.sync(scene); }
-  field.request(scene); invalidate(true); if (shouldCommit) commit();
+  if (field.request(scene) && scene.settings.field !== 'off') { view.stale = true; fieldInfo = null; }
 }
 function invalidate(ui = false) { uiDirty ||= ui; if (!raf && !document.hidden) raf = requestAnimationFrame(frame); }
 function setValue(id, value) { const node = $(id); if (document.activeElement !== node && String(node.value) !== String(value)) node.value = String(value); }
 function renderUI() {
+  const audible = new Set(activeSources(scene).map(s => s.id));
   const b = bounds(scene.room.vertices), isSpeaker = scene.selected !== 'listener', current = selected() ?? scene.listener;
   $('mode-2d').setAttribute('aria-pressed', scene.settings.mode === '2d'); $('mode-3d').setAttribute('aria-pressed', scene.settings.mode === '3d');
   setValue('field-mode', scene.settings.field); setValue('quality', scene.settings.quality);
@@ -49,12 +59,13 @@ function renderUI() {
       for (const className of ['source-dot', 'source-name', 'source-frequency']) { const node = document.createElement('span'); node.className = className; row.append(node); }
       row.addEventListener('click', () => { scene.selected = source.id; changed(); }); rows.append(row);
     }
-    row.classList.toggle('active', scene.selected === source.id); row.classList.toggle('muted', source.muted); row.style.setProperty('--source-color', speakerColor(source));
+    row.classList.toggle('active', scene.selected === source.id); row.classList.toggle('muted', !audible.has(source.id)); row.style.setProperty('--source-color', speakerColor(source));
     row.setAttribute('aria-pressed', scene.selected === source.id); row.querySelector('.source-name').textContent = source.name;
-    row.querySelector('.source-frequency').textContent = `${freqLabel(source.frequency)} · ${source.muted ? 'muted' : `${source.level} dB`}`;
+    row.querySelector('.source-frequency').textContent = `${freqLabel(source.frequency)} · ${source.muted ? 'muted' : source.solo ? 'SOLO' : !audible.has(source.id) ? 'excluded' : `${source.level} dB`}`;
   }
   $('select-listener').classList.toggle('active', !isSpeaker); $('select-listener').setAttribute('aria-pressed', !isSpeaker);
-  const power = samplePower(prepare(scene), scene.listener);
+  const report = probe.get(scene), power = report.power;
+  inspector.update(scene, report);
   $('listener-reading').textContent = power > 1e-18 ? `${powerToDb(power).toFixed(1)} dB rel.` : '−∞ dB rel.';
   $('selection-title').textContent = isSpeaker ? current.name : 'Listener';
   $('speaker-only').hidden = !isSpeaker; $('speaker-direction').hidden = !isSpeaker;
@@ -64,11 +75,14 @@ function renderUI() {
     setValue('cone', current.cone); $('cone-value').textContent = current.cone === 360 ? 'Omni' : `${current.cone}°`;
     setValue('phase', current.phase); $('phase-value').textContent = `${current.phase}°`;
     $('mute').setAttribute('aria-pressed', current.muted); $('mute').textContent = current.muted ? 'Unmute' : 'Mute';
+    $('solo').setAttribute('aria-pressed', current.solo); $('solo').textContent = current.solo ? 'Unsolo' : 'Solo';
   }
   for (const axis of ['x', 'y', 'z']) setValue(`position-${axis}`, +current[axis].toFixed(2));
   $('position-y').max = scene.room.height - 0.1;
+  setValue('pitch', current.pitch ?? 0); $('pitch-value').textContent = `${Math.round(current.pitch ?? 0)}°`;
+  setValue('snap-grid', scene.settings.snap);
   setValue('yaw', current.yaw); $('yaw-value').textContent = `${Math.round(current.yaw)}°`;
-  $('selection-hint').textContent = isSpeaker ? 'Level is relative to a unit source at 1 m, not calibrated SPL.' : 'This marker is the audio receiver. WASD moves; Q / E turns. Camera orbit is independent.';
+  $('selection-hint').textContent = isSpeaker ? 'Yaw turns horizontally; tilt aims up/down. Solo excludes other sources; mute always wins.' : 'WASD moves; Q / E turns; Page Up / Down changes selected height. Head tilt affects audio, not scalar map levels.';
   for (const [id, value] of [['room-width', b.width], ['room-depth', b.depth], ['room-height', scene.room.height]]) setValue(id, +value.toFixed(2));
   for (const material of ['wall', 'floor', 'ceiling']) setValue(`${material}-material`, scene.room[material]);
   setValue('air-loss', scene.room.airLoss); setValue('slice', scene.settings.slice); $('slice').max = scene.room.height - 0.1;
@@ -78,7 +92,9 @@ function renderUI() {
   $('undo').disabled = history.index === 0; $('redo').disabled = history.index === history.entries.length - 1;
   $('sampling-warning').hidden = scene.settings.field !== 'coherent' || !fieldInfo?.undersampled;
   $('map-legend').hidden = scene.settings.field === 'off';
-  $('gesture-hint').textContent = scene.settings.editRoom ? 'Drag gold corners · convex outlines only' : scene.settings.mode === '3d' ? 'Drag empty space to orbit · Shift-drag to pan' : 'Drag a speaker or listener · scroll to zoom';
+  $('gesture-hint').textContent = scene.settings.editRoom ? 'Drag gold corners · convex outlines only' : scene.settings.mode === '3d' ? 'Drag to orbit · Shift-drag to pan · Alt-drag object height' : 'Drag a speaker or listener · scroll to zoom';
+  $('snapshot').disabled = scene.settings.field !== 'off' && Boolean(field.running || field.pending);
+  $('audio-toggle').title = `Audio: ${audio.context?.state ?? 'not started'}`;
   $('audio-toggle').setAttribute('aria-pressed', audio.enabled); $('audio-toggle').textContent = audio.enabled ? 'Ⅱ Pause audio' : '▶ Enable audio';
 }
 function moveKeys(dt) {
@@ -89,17 +105,17 @@ function moveKeys(dt) {
   listener.x += (f.x * dz + right.x * dx) * speed; listener.z += (f.z * dz + right.z * dx) * speed;
   listener.yaw = ((listener.yaw + ((keys.has('e') ? 1 : 0) - (keys.has('q') ? 1 : 0)) * 90 * dt + 540) % 360) - 180;
   const target = selected();
-  if (target) { target.x += ((keys.has('arrowright') ? 1 : 0) - (keys.has('arrowleft') ? 1 : 0)) * speed; target.z += ((keys.has('arrowdown') ? 1 : 0) - (keys.has('arrowup') ? 1 : 0)) * speed; }
+  if (target) { target.y += ((keys.has('pageup') ? 1 : 0) - (keys.has('pagedown') ? 1 : 0)) * speed; target.x += ((keys.has('arrowright') ? 1 : 0) - (keys.has('arrowleft') ? 1 : 0)) * speed; target.z += ((keys.has('arrowdown') ? 1 : 0) - (keys.has('arrowup') ? 1 : 0)) * speed; }
   constrainScene(scene); changed(); return true;
 }
 function frame(time) {
   raf = 0; if (document.hidden) return;
   const dt = Math.min(0.05, lastTick ? (time - lastTick) / 1000 : 1 / 60); lastTick = time;
-  moveKeys(dt); if (uiDirty) { renderUI(); uiDirty = false; }
+  moveKeys(dt); flushChanges(); if (uiDirty) { renderUI(); uiDirty = false; }
   view.draw(scene, time);
   if (keys.size || (scene.settings.animate && scene.settings.paths && scene.selected !== 'listener')) invalidate();
 }
-function replace(next) { scene = next; changed(true); }
+function replace(next) { ++importSequence; scene = next; changed(true); }
 function setMode(mode) { scene.settings.mode = mode; changed(true); }
 function fit() { scene.view = { yaw: -32, pitch: 48, zoom: 1, panX: 0, panY: 0 }; changed(true); }
 function addSpeaker(duplicate = false) {
@@ -109,8 +125,8 @@ function addSpeaker(duplicate = false) {
   Object.assign(source, constrainPoint(source, scene.room)); scene.speakers.push(source); scene.selected = source.id; changed(true);
 }
 function removeSelected() { if (scene.selected === 'listener') return; scene.speakers = scene.speakers.filter(s => s.id !== scene.selected); scene.selected = scene.speakers[0]?.id ?? 'listener'; changed(true); }
-function undo() { const state = history.undo(); if (state) { scene = state; changed(); save(); } }
-function redo() { const state = history.redo(); if (state) { scene = state; changed(); save(); } }
+function undo() { ++importSequence; const state = history.undo(); if (state) { scene = state; changed(); save(); } }
+function redo() { ++importSequence; const state = history.redo(); if (state) { scene = state; changed(); save(); } }
 async function toggleAudio() {
   if (audioBusy) return; audioBusy = true; $('audio-toggle').disabled = true;
   try { if (audio.enabled) await audio.pause(); else await audio.start(scene); }
@@ -119,6 +135,9 @@ async function toggleAudio() {
 }
 function on(id, event, handler) { $(id).addEventListener(event, handler); }
 for (const [id, handler] of Object.entries({ 'mode-2d': () => setMode('2d'), 'mode-3d': () => setMode('3d'), fit, add: () => addSpeaker(), duplicate: () => addSpeaker(true), remove: removeSelected, undo, redo, 'audio-toggle': toggleAudio, 'select-listener': () => { scene.selected = 'listener'; changed(); }, mute: () => { const s = selected(); if (scene.selected !== 'listener') { s.muted = !s.muted; changed(true); } }, 'zoom-in': () => { scene.view.zoom = clamp(scene.view.zoom * 1.2, 0.4, 3); changed(true); }, 'zoom-out': () => { scene.view.zoom = clamp(scene.view.zoom / 1.2, 0.4, 3); changed(true); } })) on(id, 'click', handler);
+on('solo', 'click', () => { if (scene.selected !== 'listener') { selected().solo = !selected().solo; changed(true); } });
+on('path-inspector', 'toggle', () => invalidate(true));
+on('snap-grid', 'change', event => { scene.settings.snap = Number(event.target.value); changed(true); });
 for (const id of ['help', 'model-help']) on(id, 'click', () => { keys.clear(); $('help-dialog').showModal(); });
 on('close-help', 'click', () => $('help-dialog').close());
 on('fullscreen', 'click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { notify('Fullscreen is not available in this browser.'); } });
@@ -137,6 +156,7 @@ numericInput('frequency', v => { if (scene.selected !== 'listener') selected().f
 numericInput('frequency-number', v => { if (scene.selected !== 'listener') selected().frequency = Math.round(v); }, 'change');
 for (const prop of ['level', 'cone', 'phase']) numericInput(prop, v => { if (scene.selected !== 'listener') selected()[prop] = v; });
 numericInput('yaw', v => { selected().yaw = v; });
+numericInput('pitch', v => { selected().pitch = v; });
 numericInput('slice', v => { scene.settings.slice = v; });
 numericInput('master', v => { scene.settings.master = v; });
 numericInput('air-loss', v => { scene.room.airLoss = v; }, 'change');
@@ -151,16 +171,30 @@ for (const key of ['wall', 'floor', 'ceiling']) {
   on(`${key}-material`, 'change', event => { scene.room[key] = event.target.value; changed(true); });
 }
 on('rectangle', 'click', () => { const b = bounds(scene.room.vertices); scene.room.vertices = rectangle(b.width, b.depth); constrainScene(scene); changed(true); });
-on('export', 'click', () => {
-  const blob = new Blob([JSON.stringify(scene, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), anchor = document.createElement('a');
-  anchor.href = url; anchor.download = 'audio-sim-scene.json'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+  anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+on('export', 'click', () => downloadBlob(new Blob([JSON.stringify(scene, null, 2)], { type: 'application/json' }), 'audio-sim-scene.json'));
+on('export-paths', 'click', () => {
+  const paths = reportPaths(probe.get(scene), scene.selected);
+  downloadBlob(new Blob([pathsCSV(scene, paths)], { type: 'text/csv;charset=utf-8' }), 'audio-sim-arrivals.csv');
+});
+on('snapshot', 'click', () => {
+  const name = `audio-sim-${scene.settings.mode}.png`;
+  view.snapshot(scene).toBlob(blob => { if (blob) downloadBlob(blob, name); else notify('Snapshot could not be encoded.'); }, 'image/png');
 });
 on('import', 'click', () => $('import-file').click());
 on('import-file', 'change', async event => {
   const file = event.target.files[0]; if (!file) return;
-  try { if (file.size > 128 * 1024) throw new Error('Scene file exceeds 128 KiB.'); const imported = normalizeScene(JSON.parse(await file.text())); imported.settings.animate = false; replace(imported); notify('Scene imported. Undo restores the previous scene.'); }
-  catch (error) { notify(`Import rejected: ${error.message}`); }
-  finally { event.target.value = ''; }
+  const request = ++importSequence;
+  try {
+    if (file.size > 128 * 1024) throw new Error('Scene file exceeds 128 KiB.');
+    const text = await file.text(); if (request !== importSequence) return;
+    const imported = normalizeScene(JSON.parse(text)); imported.settings.animate = false;
+    replace(imported); notify('Scene imported. Undo restores the previous scene.');
+  } catch (error) { if (request === importSequence) notify(`Import rejected: ${error.message}`); }
+  finally { if (event.target.files[0] === file) event.target.value = ''; }
 });
 function canvasPoint(event) { const rect = $('scene').getBoundingClientRect(); return { x: event.clientX - rect.left, y: event.clientY - rect.top }; }
 on('scene', 'pointerdown', event => {
@@ -170,57 +204,61 @@ on('scene', 'pointerdown', event => {
   const object = hit?.type === 'object' ? hit.id === 'listener' ? scene.listener : scene.speakers.find(s => s.id === hit.id) : null;
   const planeY = object && scene.settings.mode === '3d' ? object.y : 0;
   const anchor = view.proj.unproject(at.x, at.y, planeY);
-  drag = { pointer: event.pointerId, hit: event.button === 0 && !event.shiftKey ? hit : null, start: at, initialView: { ...scene.view }, anchor, object: object ? { x: object.x, z: object.z, y: object.y } : null, projection: view.proj, pan: event.shiftKey || event.button !== 0 || scene.settings.mode === '2d', moved: false };
+  drag = { pointer: event.pointerId, hit: event.button === 0 && !event.shiftKey ? hit : null, start: at, initialView: { ...scene.view }, anchor, object: object ? { x: object.x, z: object.z, y: object.y } : null, projection: view.proj, height: Boolean(event.altKey && object && scene.settings.mode === '3d'), pan: event.shiftKey || event.button !== 0 || scene.settings.mode === '2d', moved: false };
   if (drag.hit?.type === 'object') { scene.selected = drag.hit.id; changed(); }
-  $('scene').style.cursor = 'grabbing';
+  if (drag.hit?.type === 'corner') view.fixedProjection = drag.projection;
+  $('scene').style.cursor = drag.height ? 'ns-resize' : 'grabbing';
 });
 on('scene', 'pointermove', event => {
   if (!drag || drag.pointer !== event.pointerId) return;
   const at = canvasPoint(event), dx = at.x - drag.start.x, dy = at.y - drag.start.y; drag.moved ||= Math.hypot(dx, dy) > 2;
   if (drag.hit?.type === 'corner') {
     const point = drag.projection.unproject(at.x, at.y, 0), vertices = scene.room.vertices.map(p => ({ ...p }));
-    vertices[drag.hit.index] = { x: clamp(point.x, -25, 25), z: clamp(point.z, -25, 25) };
+    vertices[drag.hit.index] = { x: clamp(snapCoordinate(point.x, scene.settings.snap), -25, 25), z: clamp(snapCoordinate(point.z, scene.settings.snap), -25, 25) };
     if (validRoom(vertices)) { scene.room.vertices = vertices; constrainScene(scene); }
   } else if (drag.hit?.type === 'object') {
     const target = selected(), planeY = scene.settings.mode === '3d' ? target.y : 0, point = drag.projection.unproject(at.x, at.y, planeY);
-    Object.assign(target, constrainPoint({ ...target, x: drag.object.x + point.x - drag.anchor.x, z: drag.object.z + point.z - drag.anchor.z }, scene.room));
+    if (drag.height) Object.assign(target, placePoint({ ...target, ...drag.object, y: drag.object.y - dy / (drag.projection.scale * drag.projection.cp) }, scene.room, scene.settings.snap, ['y']));
+    else Object.assign(target, placePoint({ ...target, x: drag.object.x + point.x - drag.anchor.x, z: drag.object.z + point.z - drag.anchor.z }, scene.room, scene.settings.snap));
   } else if (drag.pan) { scene.view.panX = clamp(drag.initialView.panX + dx, -1200, 1200); scene.view.panY = clamp(drag.initialView.panY + dy, -1200, 1200); }
   else { scene.view.yaw = ((drag.initialView.yaw + dx * 0.35 + 540) % 360) - 180; scene.view.pitch = clamp(drag.initialView.pitch + dy * 0.25, 18, 82); }
-  changed();
+  if (drag.hit) changed(); else invalidate();
 });
 function endDrag(event) {
   if (!drag || drag.pointer !== event.pointerId) return;
-  const moved = drag.moved; drag = null; $('scene').style.cursor = 'grab';
+  const moved = drag.moved; drag = null; view.fixedProjection = null; invalidate(); $('scene').style.cursor = 'grab';
   if ($('scene').hasPointerCapture(event.pointerId)) $('scene').releasePointerCapture(event.pointerId);
   if (moved) commit();
 }
 for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) on('scene', event, endDrag);
 on('scene', 'contextmenu', event => event.preventDefault());
-$('scene').addEventListener('wheel', event => { event.preventDefault(); scene.view.zoom = clamp(scene.view.zoom * Math.exp(-clamp(event.deltaY, -100, 100) * 0.002), 0.4, 3); changed(); clearTimeout($('scene').wheelTimer); $('scene').wheelTimer = setTimeout(commit, 180); }, { passive: false });
+$('scene').addEventListener('wheel', event => { event.preventDefault(); scene.view.zoom = clamp(scene.view.zoom * Math.exp(-clamp(event.deltaY, -100, 100) * 0.002), 0.4, 3); invalidate(); clearTimeout($('scene').wheelTimer); $('scene').wheelTimer = setTimeout(commit, 180); }, { passive: false });
 const editing = target => target instanceof Element && (target.closest('input,select,textarea,button,summary,[contenteditable=true]') || $('help-dialog').open);
 window.addEventListener('keydown', event => {
   if (editing(event.target) || event.altKey) return;
   const key = event.key.toLowerCase();
   if (event.ctrlKey || event.metaKey) { if (key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); } return; }
-  if (['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) { event.preventDefault(); if (event.shiftKey) keys.add('shift'); keys.add(key); invalidate(); return; }
+  if (['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'pageup', 'pagedown'].includes(key)) { event.preventDefault(); if (event.shiftKey) keys.add('shift'); keys.add(key); invalidate(); return; }
   if (key === 'shift') { if (keys.size) keys.add(key); return; }
   if (event.repeat) return;
   const shortcut = { '2': () => setMode('2d'), '3': () => setMode('3d'), home: fit, delete: removeSelected, l: () => { scene.selected = 'listener'; changed(); } }[key];
   if (shortcut) { event.preventDefault(); shortcut(); }
 });
 window.addEventListener('keyup', event => { if (keys.delete(event.key.toLowerCase()) && (!keys.size || (keys.size === 1 && keys.has('shift')))) { keys.clear(); commit(); } });
-window.addEventListener('blur', () => { if (keys.size) commit(); keys.clear(); });
+window.addEventListener('blur', () => { if (keys.size) commit(); keys.clear(); if (drag) endDrag({ pointerId: drag.pointer }); });
 document.addEventListener('focusin', event => { if (editing(event.target)) keys.clear(); });
 document.addEventListener('visibilitychange', () => {
   keys.clear(); lastTick = 0;
-  if (document.hidden) { cancelAnimationFrame(raf); raf = 0; audio.pause().catch(() => {}); }
+  if (document.hidden) { cancelAnimationFrame(raf); raf = 0; audio.pause({ immediate: true }).catch(() => {}); }
   else invalidate(true);
 });
 const observer = new ResizeObserver(() => { view.resize(); invalidate(); }); observer.observe($('canvas-wrap'));
 window.addEventListener('resize', () => { view.resize(); invalidate(); });
-window.addEventListener('pagehide', () => { if (saveTimer) { clearTimeout(saveTimer); try { localStorage.setItem(STORAGE, JSON.stringify(scene)); } catch {} } audio.pause().catch(() => {}); });
+window.addEventListener('pagehide', () => { if (saveTimer) { clearTimeout(saveTimer); try { localStorage.setItem(STORAGE, JSON.stringify(scene)); } catch {} } audio.pause({ immediate: true }).catch(() => {}); });
 export function getDiagnostics() {
-  return { scene: copy(scene), audio: audio.diagnostics(), field: { jobs: field.jobs, completed: field.completed, busy: Boolean(field.running || field.pending), worker: Boolean(field.worker), elapsed: fieldInfo?.elapsed ?? null, nx: fieldInfo?.nx ?? null, nz: fieldInfo?.nz ?? null, undersampled: fieldInfo?.undersampled ?? false }, draws: view.draws,
+  return { scene: copy(scene), audio: audio.diagnostics(), field: { jobs: field.jobs, completed: field.completed, busy: Boolean(pipelineDirty || field.running || field.pending), worker: Boolean(field.worker), stale: Boolean(view.stale), elapsed: fieldInfo?.elapsed ?? null, nx: fieldInfo?.nx ?? null, nz: fieldInfo?.nz ?? null, undersampled: fieldInfo?.undersampled ?? false }, draws: view.draws, probeComputations: probe.computations,
+    corners: scene.room.vertices.map(v => view.proj?.project({ ...v, y: 0 })),
     screen: Object.fromEntries([...scene.speakers, { ...scene.listener, id: 'listener' }].map(s => [s.id, view.proj?.project(scene.settings.mode === '3d' ? s : { ...s, y: 0 })])) };
 }
+window.addEventListener('pageshow', () => { lastTick = 0; view.resize(); changed(); });
 view.resize(); changed(); if (storageError) notify(storageError);

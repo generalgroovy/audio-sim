@@ -1,4 +1,4 @@
-import { MATERIALS, bounds, insideRoom, heading, distance, radians, clamp, TAU } from './model.js';
+import { MATERIALS, bounds, insideRoom, heading, distance, radians, clamp, TAU, activeSources } from './model.js';
 export const SPEED_OF_SOUND = 343; // Fixed educational model, metres/second.
 export const dbToGain = db => 10 ** (db / 20);
 export const powerToDb = power => power > 1e-20 ? 10 * Math.log10(power) : -200;
@@ -11,7 +11,7 @@ export function absorption(material, frequency) {
 export function directivity(source, target) {
   if (source.cone >= 360) return 1;
   const d = distance(source, target); if (d < 1e-9) return 1;
-  const f = heading(source.yaw), cosine = clamp((f.x * (target.x - source.x) + f.z * (target.z - source.z)) / d, -1, 1);
+  const f = heading(source.yaw, source.pitch), cosine = clamp((f.x * (target.x - source.x) + f.y * (target.y - source.y) + f.z * (target.z - source.z)) / d, -1, 1);
   const angle = Math.acos(cosine), outer = radians(source.cone / 2), inner = outer * 0.65;
   if (angle <= inner) return 1; if (angle >= outer) return 0.08;
   return 1 - 0.92 * (angle - inner) / (outer - inner);
@@ -54,9 +54,9 @@ export function reflectionHit(image, receiver, room, out = {}) {
 }
 export function prepare(scene) {
   const frequencies = [], groups = new Map();
-  const sources = scene.speakers.filter(s => !s.muted).map(source => {
+  const sources = activeSources(scene).map(source => {
     if (!groups.has(source.frequency)) { groups.set(source.frequency, frequencies.length); frequencies.push(source.frequency); }
-    return { source, amplitude: dbToGain(source.level), air: roomAir(scene.room, source.frequency), waveNumber: TAU * source.frequency / SPEED_OF_SOUND, phase: radians(source.phase), direction: heading(source.yaw), inner: radians(source.cone / 2) * 0.65, outer: radians(source.cone / 2), group: groups.get(source.frequency), images: scene.settings.reflections ? buildImages(source, scene.room).filter(i => i.reflectivity > 0) : [] };
+    return { source, amplitude: dbToGain(source.level), air: roomAir(scene.room, source.frequency), waveNumber: TAU * source.frequency / SPEED_OF_SOUND, phase: radians(source.phase), direction: heading(source.yaw, source.pitch), inner: radians(source.cone / 2) * 0.65, outer: radians(source.cone / 2), group: groups.get(source.frequency), images: scene.settings.reflections ? buildImages(source, scene.room).filter(i => i.reflectivity > 0) : [] };
   });
   return { sources, room: scene.room, coherent: scene.settings.field === 'coherent', frequencies,
     real: new Float64Array(frequencies.length), imag: new Float64Array(frequencies.length), hit: { x: 0, y: 0, z: 0 } };
@@ -68,7 +68,7 @@ function compiledGain(record, target, length, reflection = 1) {
     const dx = target.x - record.source.x, dy = target.y - record.source.y, dz = target.z - record.source.z;
     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (distance > 1e-9) {
-      const angle = Math.acos(clamp((record.direction.x * dx + record.direction.z * dz) / distance, -1, 1));
+      const angle = Math.acos(clamp((record.direction.x * dx + record.direction.y * dy + record.direction.z * dz) / distance, -1, 1));
       coneGain = angle <= record.inner ? 1 : angle >= record.outer ? 0.08 : 1 - 0.92 * (angle - record.inner) / (record.outer - record.inner);
     }
   }
@@ -98,7 +98,7 @@ export function samplePower(prepared, receiver) {
   return power;
 }
 export function pathsFor(source, receiver, scene) {
-  if (!source || source.muted || !insideRoom(source, scene.room) || !insideRoom(receiver, scene.room)) return [];
+  if (!source || !activeSources(scene).some(s => s.id === source.id) || !insideRoom(source, scene.room) || !insideRoom(receiver, scene.room)) return [];
   const d = distance(source, receiver);
   const result = [{ kind: 'direct', points: [source, receiver], length: d, gain: pathGain(source, receiver, d, 1, scene.room.airLoss) }];
   if (scene.settings.reflections) for (const image of buildImages(source, scene.room)) {
@@ -130,5 +130,14 @@ export function createFieldJob(scene) {
   } };
 }
 export function computeField(scene) { return createFieldJob(scene).step(Infinity); }
-// Listener/camera changes do not invalidate a fixed-height acoustic map.
-export function fieldKey(scene) { return JSON.stringify([scene.room, scene.speakers.map(({ id, name, ...s }) => s), scene.settings.field, scene.settings.reflections, scene.settings.slice, scene.settings.quality]); }
+// Visual names and output gain never alter acoustics. Source IDs are only needed
+// for report attribution; the map can reuse its cache across ID-only edits.
+export function acousticKey(scene, includeIds = false) {
+  return JSON.stringify([scene.room, activeSources(scene).map(({ id, name, muted, solo, ...source }) => {
+    if (scene.settings.field !== 'coherent') delete source.phase;
+    return includeIds ? { id, ...source } : source;
+  }), scene.settings.field === 'coherent', scene.settings.reflections]);
+}
+export function fieldKey(scene) {
+  return JSON.stringify([acousticKey(scene), scene.settings.field === 'off', scene.settings.slice, scene.settings.quality]);
+}

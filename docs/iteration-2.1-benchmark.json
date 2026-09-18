@@ -1,0 +1,115 @@
+{
+  "baseline_commit": "dc986863343e77af770fd2667a9d231ab1357bae",
+  "before": {
+    "node": "v22.16.0",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "note": "Synthetic warmed solver benchmark, not browser FPS; rendering/audio excluded.",
+    "results": [
+      {
+        "quality": "fast",
+        "speakers": 4,
+        "samples": 2520,
+        "median_ms": 2.55,
+        "min_ms": 2.18,
+        "max_ms": 2.96
+      },
+      {
+        "quality": "fast",
+        "speakers": 16,
+        "samples": 2520,
+        "median_ms": 8.52,
+        "min_ms": 8.25,
+        "max_ms": 9.26
+      },
+      {
+        "quality": "balanced",
+        "speakers": 4,
+        "samples": 7392,
+        "median_ms": 6.75,
+        "min_ms": 5.93,
+        "max_ms": 7.65
+      },
+      {
+        "quality": "balanced",
+        "speakers": 16,
+        "samples": 7392,
+        "median_ms": 24.09,
+        "min_ms": 23.4,
+        "max_ms": 26.49
+      },
+      {
+        "quality": "fine",
+        "speakers": 4,
+        "samples": 20480,
+        "median_ms": 16.84,
+        "min_ms": 15.79,
+        "max_ms": 17.04
+      },
+      {
+        "quality": "fine",
+        "speakers": 16,
+        "samples": 20480,
+        "median_ms": 64.88,
+        "min_ms": 61.91,
+        "max_ms": 69.27
+      }
+    ]
+  },
+  "after": {
+    "node": "v22.16.0",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "note": "Synthetic warmed solver benchmark, not browser FPS; rendering/audio excluded.",
+    "results": [
+      {
+        "quality": "fast",
+        "speakers": 4,
+        "samples": 2520,
+        "median_ms": 2.7,
+        "min_ms": 2.13,
+        "max_ms": 3.09
+      },
+      {
+        "quality": "fast",
+        "speakers": 16,
+        "samples": 2520,
+        "median_ms": 8.29,
+        "min_ms": 7.9,
+        "max_ms": 9.41
+      },
+      {
+        "quality": "balanced",
+        "speakers": 4,
+        "samples": 7392,
+        "median_ms": 6.5,
+        "min_ms": 5.97,
+        "max_ms": 8.69
+      },
+      {
+        "quality": "balanced",
+        "speakers": 16,
+        "samples": 7392,
+        "median_ms": 21.92,
+        "min_ms": 21.79,
+        "max_ms": 27.16
+      },
+      {
+        "quality": "fine",
+        "speakers": 4,
+        "samples": 20480,
+        "median_ms": 17.09,
+        "min_ms": 16.14,
+        "max_ms": 20.81
+      },
+      {
+        "quality": "fine",
+        "speakers": 16,
+        "samples": 20480,
+        "median_ms": 66.95,
+        "min_ms": 62.6,
+        "max_ms": 70.58
+      }
+    ]
+  },
+  "equivalence": "Nine legacy Float32 grids matched exactly (three presets x three qualities).",
+  "interpretation": "Mixed/noisy solver timings; no blanket speedup claim. Main savings are avoided work and event coalescing."
+}

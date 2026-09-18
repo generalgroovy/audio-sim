@@ -42,3 +42,78 @@ test('frequency edits crossfade instead of leaking old oscillators', async () =>
 test('reflections can be muted without allocating replacement nodes', async () => { const a = new AudioEngine(Context), s = preset(); await a.start(s); const count = a.context.nodes.length; s.settings.reflections = false; a.sync(s); assert.equal(a.context.nodes.length, count); for (const v of a.voices.values()) for (const [key, path] of v.paths) if (key !== 'direct') assert.equal(path.gain.gain.value, 0); s.settings.reflections = true; a.sync(s); assert.equal(a.context.nodes.length, count); await a.dispose(); });
 test('master preview has bounded gain and pauses the context', async () => { const a = new AudioEngine(Context), s = preset(); s.settings.master = -6; await a.start(s); assert.ok(a.master.gain.value <= 10 ** (-6 / 20)); await a.pause(); assert.equal(a.enabled, false); assert.equal(a.context.state, 'suspended'); assert.equal(a.master.gain.value, 0); await a.dispose(); });
 test('unavailable Web Audio rejects clearly without breaking visual state', async () => { const a = new AudioEngine(null); await assert.rejects(a.start(preset()), /unavailable/); });
+
+class DeferredContext extends Context {
+  constructor() { super(); this.resumes = []; }
+  resume() { return new Promise(resolve => { this.resumes.push(() => { this.state = 'running'; resolve(); }); }); }
+}
+test('an older resume completion cannot suspend a newer successful start', async () => {
+  const a = new AudioEngine(DeferredContext);
+  try {
+    const first = a.start(preset()); const context = a.context;
+    const pause = a.pause(); const second = a.start(preset('stereo'));
+    context.resumes[1](); await second; context.resumes[0](); await first; await pause;
+    assert.equal(context.state, 'running'); assert.equal(a.enabled, true); assert.equal(a.voices.size, 2);
+  } finally { await a.dispose(); }
+});
+test('a scene replacement during resume uses the latest scene, not an obsolete snapshot', async () => {
+  const a = new AudioEngine(DeferredContext);
+  try {
+    const start = a.start(preset()); a.sync(preset('empty'));
+    a.context.resumes[0](); await start; assert.equal(a.voices.size, 0);
+  } finally { await a.dispose(); }
+});
+test('external interruption revokes playback intent until another explicit start', async () => {
+  const a = new AudioEngine(Context);
+  try {
+    await a.start(preset()); a.context.state = 'interrupted'; a.context.onstatechange?.();
+    assert.equal(a.enabled, false); assert.equal(a.master.gain.value, 0);
+  } finally { await a.dispose(); }
+});
+test('a blocked resume times out and restores a muted, retryable state', async () => {
+  const a = new AudioEngine(DeferredContext, { resumeTimeout: 15 });
+  try {
+    await assert.rejects(a.start(preset()), /timed out/);
+    assert.equal(a.enabled, false); assert.equal(a.master.gain.value, 0);
+    const next = a.start(preset('stereo')); a.context.resumes[1](); await next;
+    assert.equal(a.enabled, true); assert.equal(a.voices.size, 2);
+  } finally { await a.dispose(); }
+});
+test('late resume after pause stays inaudible and suspended', async () => {
+  const a = new AudioEngine(DeferredContext);
+  try {
+    const start = a.start(preset()); await a.pause(); a.context.resumes[0](); await start;
+    assert.equal(a.enabled, false); assert.equal(a.context.state, 'suspended'); assert.equal(a.voices.size, 0);
+  } finally { await a.dispose(); }
+});
+test('dispose disconnects live and retired nodes without waiting for onended', async () => {
+  class NoEndedContext extends Context { createOscillator() { const osc = super.createOscillator(); osc.stop = () => {}; return osc; } }
+  const a = new AudioEngine(NoEndedContext); await a.start(preset());
+  const ctx = a.context; const s = preset(); s.speakers[0].frequency = 120; a.sync(s);
+  assert.equal(a.retired.size, 1); await a.dispose();
+  assert.equal(ctx.state, 'closed'); assert.equal(a.retired.size, 0); assert.equal(a.voices.size, 0);
+  assert.ok(ctx.nodes.every(n => n.disconnected));
+});
+test('closed contexts can be explicitly recreated without stale voices', async () => {
+  const a = new AudioEngine(Context);
+  try {
+    await a.start(preset()); const old = a.context; await old.close(); old.onstatechange?.();
+    await a.start(preset('stereo')); assert.notEqual(a.context, old); assert.equal(a.voices.size, 2);
+  } finally { await a.dispose(); }
+});
+test('source solo and mute precedence select the same voices as the acoustic model', async () => {
+  const a = new AudioEngine(Context), scene = preset();
+  try {
+    scene.speakers[1].solo = true; await a.start(scene); assert.deepEqual([...a.voices.keys()], ['2']);
+    scene.speakers[1].muted = true; a.sync(scene); assert.equal(a.voices.size, 0);
+    scene.speakers[1].solo = false; a.sync(scene); assert.equal(a.voices.size, 3);
+  } finally { await a.dispose(); }
+});
+test('pitched listener audio forward and up vectors stay perpendicular', async () => {
+  const a = new AudioEngine(Context), scene = preset(); scene.listener.yaw = 40; scene.listener.pitch = 65;
+  try {
+    await a.start(scene); const l = a.context.listener;
+    const dot = ['X', 'Y', 'Z'].reduce((sum, axis) => sum + l[`forward${axis}`].value * l[`up${axis}`].value, 0);
+    assert.ok(Math.abs(dot) < 1e-9); assert.ok(l.forwardY.value > 0.9);
+  } finally { await a.dispose(); }
+});
