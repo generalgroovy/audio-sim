@@ -1,0 +1,114 @@
+{
+  "baseline": "First-pass new solver, NOT original repository",
+  "before": {
+    "node": "v22.16.0",
+    "cpu": "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz",
+    "note": "Synthetic warmed solver benchmark, not browser FPS; rendering/audio excluded.",
+    "results": [
+      {
+        "quality": "fast",
+        "speakers": 4,
+        "samples": 2520,
+        "median_ms": 12.04,
+        "min_ms": 11.86,
+        "max_ms": 21.47
+      },
+      {
+        "quality": "fast",
+        "speakers": 16,
+        "samples": 2520,
+        "median_ms": 46.58,
+        "min_ms": 43.31,
+        "max_ms": 64.42
+      },
+      {
+        "quality": "balanced",
+        "speakers": 4,
+        "samples": 7392,
+        "median_ms": 33.57,
+        "min_ms": 31.97,
+        "max_ms": 37.38
+      },
+      {
+        "quality": "balanced",
+        "speakers": 16,
+        "samples": 7392,
+        "median_ms": 140.6,
+        "min_ms": 129.29,
+        "max_ms": 177.01
+      },
+      {
+        "quality": "fine",
+        "speakers": 4,
+        "samples": 20480,
+        "median_ms": 102.3,
+        "min_ms": 93.72,
+        "max_ms": 122.71
+      },
+      {
+        "quality": "fine",
+        "speakers": 16,
+        "samples": 20480,
+        "median_ms": 369.59,
+        "min_ms": 343.75,
+        "max_ms": 381.13
+      }
+    ]
+  },
+  "after": {
+    "node": "v22.16.0",
+    "cpu": "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz",
+    "note": "Synthetic warmed solver benchmark, not browser FPS; rendering/audio excluded.",
+    "results": [
+      {
+        "quality": "fast",
+        "speakers": 4,
+        "samples": 2520,
+        "median_ms": 5.21,
+        "min_ms": 3.62,
+        "max_ms": 8.87
+      },
+      {
+        "quality": "fast",
+        "speakers": 16,
+        "samples": 2520,
+        "median_ms": 18.23,
+        "min_ms": 15.98,
+        "max_ms": 21.49
+      },
+      {
+        "quality": "balanced",
+        "speakers": 4,
+        "samples": 7392,
+        "median_ms": 10.67,
+        "min_ms": 10.18,
+        "max_ms": 12.98
+      },
+      {
+        "quality": "balanced",
+        "speakers": 16,
+        "samples": 7392,
+        "median_ms": 41.94,
+        "min_ms": 40.58,
+        "max_ms": 51.63
+      },
+      {
+        "quality": "fine",
+        "speakers": 4,
+        "samples": 20480,
+        "median_ms": 32.54,
+        "min_ms": 28.81,
+        "max_ms": 36.77
+      },
+      {
+        "quality": "fine",
+        "speakers": 16,
+        "samples": 20480,
+        "median_ms": 131.91,
+        "min_ms": 114.18,
+        "max_ms": 141.9
+      }
+    ]
+  },
+  "equivalence": "Float32 maps for reference/stereo/interference matched exactly; max absolute difference 0."
+}
