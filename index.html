@@ -1,176 +1,94 @@
-<!-- index.html -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>3D Speaker Simulator</title>
-  <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; }
-    #ui {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.7);
-      color: white;
-      padding: 10px;
-      border-radius: 8px;
-    }
-    input { width: 120px; }
-    button { margin-top: 5px; }
-  </style>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0c121b"><meta name="description" content="An interactive 2D and 3D spatial sound sandbox. Place speakers, shape a room, explore interference and hear first-order reflections. Private, client-side, no dependencies.">
+  <title>Audio Sim — Spatial Sound Sandbox</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23192331'/%3E%3Cpath d='M10 17v6m7-12v18m7-22v26m7-16v6' stroke='%2365d7c2' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
+<a class="skip-link" href="#inspector">Skip to scene controls</a>
+<header class="app-header">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><b></b></span><div><h1>audio<span>/sim</span><small>2.2</small></h1><p>A ROOM FOR SOUND</p></div></div>
+  <div class="header-actions"><span id="save-status" class="quiet">Local scene</span><button id="undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">↶</button><button id="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">↷</button><button id="import">Import</button><button id="export">Export</button><button id="snapshot" title="Export the current room view as PNG">PNG</button><button id="help" class="icon-button" aria-label="Help and model limitations">Guide <span aria-hidden="true">↗</span></button></div>
+  <div class="audio-controls"><label class="master-control" for="master">PREVIEW LEVEL <output id="master-value">−24 dB</output><input id="master" type="range" min="-60" max="-6" step="1" value="-24" aria-label="Preview output level"></label><button id="audio-toggle" class="primary" aria-pressed="false">▶ Enable audio</button></div>
+</header>
+<main class="workspace">
+  <section class="stage" aria-label="Room simulation">
+    <div class="stage-toolbar">
+      <div class="segmented" aria-label="View mode"><button id="mode-2d" aria-pressed="true">2D <span>Plan</span></button><button id="mode-3d" aria-pressed="false">3D <span>Orbit</span></button></div>
+      <label class="field-choice"><span>MAP</span><select id="field-mode" aria-label="Sound map mode"><option value="energy">Energy coverage</option><option value="coherent">Phase interference</option><option value="off">No sound map</option></select></label>
+      <div class="view-actions"><button id="fit" title="Fit room (Home)">Fit</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="fullscreen" title="Toggle fullscreen" aria-label="Toggle fullscreen">⛶</button></div>
+    </div>
+    <div class="canvas-wrap" id="canvas-wrap">
+      <canvas id="scene" tabindex="0" aria-label="Interactive room. Drag speakers or listener. Drag empty space to orbit in 3D; Shift-drag to pan. Keyboard controls are in Help."></canvas>
+      <div class="scene-hud"><span class="eyebrow">FIELD NOTES / <span id="hud-view">PLAN</span></span><strong id="room-summary">10 × 8 × 3.2 m</strong><span id="scene-summary">4 speakers · 80 Hz–8 kHz</span></div>
+      <div class="receiver-hud"><span class="eyebrow">AT THE LISTENER</span><strong id="probe-reading">—</strong><span id="probe-model">Energy estimate · dB relative</span></div>
+      <div id="sampling-warning" class="sampling-warning" role="status" hidden>Fine interference is undersampled. Lower the frequency or increase quality. The listener probe is evaluated directly.</div>
 
-<div id="ui">
-  <div>Volume</div>
-  <input id="volume" type="range" min="0" max="1" step="0.01" value="0.5">
-
-  <div>Frequency</div>
-  <input id="freq" type="range" min="100" max="2000" step="1" value="440">
-
-  <br>
-  <button id="addSpeaker">Add Speaker</button>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script>
-// ===== SCENE SETUP =====
-const scene = new THREE.Scene();
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.position.set(0, 2, 6);
-
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-
-// Room
-const room = new THREE.Mesh(
-  new THREE.BoxGeometry(10, 5, 10),
-  new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true })
-);
-scene.add(room);
-
-// Light (optional visual clarity)
-const light = new THREE.PointLight(0xffffff, 1);
-light.position.set(5,5,5);
-scene.add(light);
-
-// ===== AUDIO SETUP =====
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-const speakers = [];
-
-function createSpeaker(x=0,y=1,z=0) {
-  // 3D object
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5,0.5,0.5),
-    new THREE.MeshBasicMaterial({ color: 0xff0000 })
-  );
-  mesh.position.set(x,y,z);
-  scene.add(mesh);
-
-  // Audio chain
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  const filter = audioCtx.createBiquadFilter();
-  const panner = audioCtx.createPanner();
-
-  osc.type = "sine";
-  osc.frequency.value = 440;
-
-  gain.gain.value = 0.5;
-  filter.type = "lowpass";
-
-  panner.panningModel = "HRTF";
-
-  osc.connect(filter).connect(gain).connect(panner).connect(audioCtx.destination);
-  osc.start();
-
-  const speaker = { mesh, osc, gain, filter, panner };
-  speakers.push(speaker);
-
-  return speaker;
-}
-
-// Initial speaker
-let selectedSpeaker = createSpeaker(1,1,0);
-
-// ===== UI =====
-const volumeSlider = document.getElementById("volume");
-const freqSlider = document.getElementById("freq");
-
-volumeSlider.oninput = () => {
-  if(selectedSpeaker) selectedSpeaker.gain.gain.value = volumeSlider.value;
-};
-
-freqSlider.oninput = () => {
-  if(selectedSpeaker) selectedSpeaker.osc.frequency.value = freqSlider.value;
-};
-
-document.getElementById("addSpeaker").onclick = () => {
-  selectedSpeaker = createSpeaker(
-    (Math.random()-0.5)*5,
-    1,
-    (Math.random()-0.5)*5
-  );
-};
-
-// ===== INTERACTION (CLICK SELECT) =====
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-
-window.addEventListener("click", (event) => {
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, camera);
-
-  const meshes = speakers.map(s => s.mesh);
-  const intersects = raycaster.intersectObjects(meshes);
-
-  if (intersects.length > 0) {
-    selectedSpeaker = speakers.find(s => s.mesh === intersects[0].object);
-  }
-});
-
-// ===== AUDIO POSITION UPDATE =====
-function updateAudio() {
-  speakers.forEach(s => {
-    s.panner.positionX.value = s.mesh.position.x;
-    s.panner.positionY.value = s.mesh.position.y;
-    s.panner.positionZ.value = s.mesh.position.z;
-  });
-
-  audioCtx.listener.positionX.value = camera.position.x;
-  audioCtx.listener.positionY.value = camera.position.y;
-  audioCtx.listener.positionZ.value = camera.position.z;
-}
-
-// ===== BASIC CAMERA CONTROL =====
-window.addEventListener("keydown", (e) => {
-  const speed = 0.3;
-  if (e.key === "w") camera.position.z -= speed;
-  if (e.key === "s") camera.position.z += speed;
-  if (e.key === "a") camera.position.x -= speed;
-  if (e.key === "d") camera.position.x += speed;
-});
-
-// ===== LOOP =====
-function animate() {
-  requestAnimationFrame(animate);
-  updateAudio();
-  renderer.render(scene, camera);
-}
-animate();
-
-// Resize
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth/window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-</script>
+      <div id="gesture-hint" class="gesture-hint">Drag a speaker or listener · scroll to zoom</div>
+    </div>
+    <div class="map-context"><div class="map-legend" id="map-legend"><div><span id="map-caption">ENERGY COVERAGE</span><span id="slice-label">SLICE 1.2 m</span></div><div class="gradient"></div><div class="legend-ticks"><span>−60</span><span>−40</span><span>−20</span><span>0 dB</span></div><p>Relative level, not measured SPL.</p></div><p id="map-context">Color shows estimated energy; source phase is ignored.</p><label><input id="contours" type="checkbox" checked> Level contours</label></div>
+    <div class="stage-status"><div><span class="status-dot"></span><span id="render-status">Preparing field…</span></div><label><input id="animate" type="checkbox"> Animate paths</label><select id="snap-grid" aria-label="Placement grid snapping"><option value="0">Snap off</option><option value="0.1">Snap 0.1 m</option><option value="0.25">Snap 0.25 m</option><option value="0.5">Snap 0.5 m</option><option value="1">Snap 1 m</option></select><select id="quality" aria-label="Map quality"><option value="fast">Fast map</option><option value="balanced" selected>Balanced map</option><option value="fine">Fine map</option></select></div>
+  </section>
+  <aside class="inspector" id="inspector" tabindex="-1" aria-label="Scene controls">
+    <section class="panel-section">
+      <div class="section-heading"><h2>Sound sources</h2><span class="eyebrow">01 / PLACE</span></div>
+      <select id="preset" aria-label="Load scene preset"><option value="">Start with a scene…</option><option value="reference">Four frequencies · explore coverage</option><option value="stereo">Stereo pair · explore direction</option><option value="interference">Opposite phases · explore cancellation</option><option value="surround51">5.1 speaker layout</option><option value="surround71">7.1 speaker layout</option><option value="immersive">7.1.4 height-speaker layout</option><option value="empty">Empty room</option></select>
+      <div class="section-heading sources-heading"><h3>In this room <span id="source-count">4 / 16</span></h3><button id="add" class="small">+ Speaker</button></div>
+      <div id="source-list" class="source-list"></div>
+      <button id="select-listener" class="listener-row"><span>◎ &nbsp; Listener</span><strong id="listener-reading">— dB rel.</strong></button>
+    </section>
+    <section class="panel-section">
+      <div class="section-heading"><h2 id="selection-title">Low</h2><span class="eyebrow" id="selection-kind">02 / SOURCE</span></div>
+      <div id="speaker-only">
+        <div class="name-row"><input id="speaker-name" type="text" maxlength="48" aria-label="Speaker name"></div><div class="source-actions"><button id="mute" class="small" aria-pressed="false">Mute</button><button id="solo" class="small" aria-pressed="false" title="Isolate this source; mute overrides solo">Solo</button><button id="duplicate" class="small" aria-label="Duplicate speaker" title="Duplicate">Copy</button><button id="remove" class="small danger" aria-label="Remove speaker" title="Remove (Delete)">Remove</button></div>
+        <div class="control-row"><label for="frequency">Frequency</label><input id="frequency" type="range" min="0" max="1000" step="1" aria-label="Frequency logarithmic slider"><span class="value-unit"><input id="frequency-number" type="number" min="20" max="16000" step="1" aria-label="Frequency in hertz"><span>Hz</span></span></div>
+        <label class="control-row" for="level">Source level<input id="level" type="range" min="-60" max="0" step="1"><output id="level-value">−12 dB</output></label>
+      </div>
+      <div class="coordinate-grid"><label>X <span>m</span><input id="position-x" type="number" min="-25" max="25" step="0.1" aria-label="X position in metres"></label><label>Height <span>m</span><input id="position-y" type="number" min="0.1" max="12" step="0.1" aria-label="Height in metres"></label><label>Z <span>m</span><input id="position-z" type="number" min="-25" max="25" step="0.1" aria-label="Z position in metres"></label></div>
+      <label class="control-row" for="yaw">Bearing<input id="yaw" type="range" min="-180" max="180" step="1"><output id="yaw-value">0°</output></label>
+      <label class="control-row" for="pitch">Tilt<input id="pitch" type="range" min="-90" max="90" step="1"><output id="pitch-value">0°</output></label>
+      <div id="speaker-direction"><label class="control-row" for="cone">Spread<input id="cone" type="range" min="20" max="360" step="5"><output id="cone-value">Omni</output></label><label class="control-row" for="phase">Phase<input id="phase" type="range" min="0" max="360" step="1"><output id="phase-value">0°</output></label></div>
+      <p id="selection-hint" class="microcopy">Level is relative to a unit source at 1 m, not calibrated SPL.</p>
+    </section>
+    <section class="panel-section">
+      <details id="path-inspector"><summary><span>Listener arrivals</span><span class="eyebrow">03 / PROBE</span></summary>
+        <p class="microcopy" data-summary></p><p class="arrival-key"><span>━ Direct</span><span>┄ Reflected</span></p>
+        <canvas id="arrival-plot" width="560" height="150" aria-label="Geometric arrival times. Direct paths are teal; reflections are amber. Exact values are in the following table."></canvas>
+        <div class="path-table-wrap"><table id="path-table"><thead><tr><th scope="col">Source / path</th><th scope="col">m</th><th scope="col">ms</th><th scope="col">dB rel.</th></tr></thead><tbody></tbody></table></div>
+        <p class="microcopy" data-path-count></p><button id="export-paths" class="small">Export arrivals CSV</button>
+      </details>
+    </section>
+    <section class="panel-section">
+      <details open><summary><span>Room & acoustics</span><span class="eyebrow">04 / SPACE</span></summary>
+        <div class="coordinate-grid"><label>Width <span>m</span><input id="room-width" type="number" min="0.5" max="50" step="0.5"></label><label>Depth <span>m</span><input id="room-depth" type="number" min="0.5" max="50" step="0.5"></label><label>Height <span>m</span><input id="room-height" type="number" min="1" max="12" step="0.1"></label></div>
+        <div class="check-row"><label><input id="edit-room" type="checkbox"> Edit corners</label><button id="rectangle" class="small">Rectangular</button></div>
+        <div class="material-grid"><label>Walls<select id="wall-material"></select></label><label>Floor<select id="floor-material"></select></label><label>Ceiling<select id="ceiling-material"></select></label></div>
+        <div class="check-row"><label><input id="reflections" type="checkbox" checked> Early reflections</label><label><input id="paths" type="checkbox" checked> Show paths</label></div>
+        <label class="control-row" for="slice">Map height<input id="slice" type="range" min="0.1" max="3.1" step="0.1" value="1.2"><output id="slice-value">1.2 m</output></label>
+        <label class="air-row" for="air-loss">Optional air loss @ 1 kHz <span><input id="air-loss" type="number" min="0" max="0.1" step="0.001" value="0"> dB/m</span></label>
+      </details>
+    </section>
+    <div class="model-note"><span class="note-mark">i</span><p>A sketch of sound, not a room measurement. One reflection per path. <button id="model-help" class="text-button">Understand the model ↗</button></p></div>
+  </aside>
+</main>
+<input id="import-file" type="file" accept=".json,application/json" hidden>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="help-dialog" aria-labelledby="guide-title">
+  <div class="dialog-heading"><div><span class="eyebrow">AUDIO / SIM — FIELD GUIDE</span><h2 id="guide-title">Place. Listen. Compare.</h2></div><button id="close-help" aria-label="Close help">Close ×</button></div>
+  <div class="help-content">
+    <section class="guide-start"><h3>Start in one minute</h3><p>Choose a scene. Drag a speaker or the white listener. Switch between <strong>2D Plan</strong> and <strong>3D Orbit</strong> without changing the sound. Click <strong>Enable audio</strong> at a low device volume to listen.</p><p><strong>Your ears are at the listener marker, not the camera.</strong></p></section>
+    <section><h3>Read the map</h3><dl class="guide-definitions"><dt>Energy coverage</dt><dd>Where the model predicts more or less sound energy. Ignores phase.</dd><dt>Phase interference</dt><dd>Where equal-frequency tones reinforce or cancel. An undersampling warning means the grid cannot show every fine detail.</dd><dt>Map height</dt><dd>The horizontal slice shown in both views. Source and listener heights remain independent.</dd><dt>Listener arrivals</dt><dd>Distances, delays and relative gains at the listener. Select the listener for all audible sources, or a speaker for its paths.</dd></dl><p>Colors and numbers are relative, not calibrated sound-pressure levels. Audio uses spatial filtering and output protection, so it will not exactly match the scalar map.</p></section>
+    <details><summary>Move, aim and isolate</summary><p>Drag a source or listener to move it. In 3D, drag empty space to orbit; Shift-drag or right-drag to pan; Alt-drag an object to change height. Scroll or use + / − to zoom. <strong>Fit</strong> restores the overview.</p><p><strong>Bearing</strong> aims horizontally; <strong>Tilt</strong> aims vertically; <strong>Spread</strong> sets the source cone. The plan cone is a bearing guide; the 3D guide also shows tilt. Solo can isolate several sources; mute always wins. Placement snapping affects pointer placement, not numeric inputs.</p><p>Enable <strong>Edit corners</strong> to reshape the room. Corners must keep the outline convex and uncrossed. Numeric XYZ controls also work without dragging.</p></details>
+    <details><summary>Keyboard controls</summary><dl class="shortcut-grid"><dt>2 / 3</dt><dd>Plan / orbit view</dd><dt>W A S D</dt><dd>Move the listener</dd><dt>Q / E</dt><dd>Turn the listener</dd><dt>Arrow keys</dt><dd>Move the selected object</dd><dt>Page Up / Down</dt><dd>Change selected height</dd><dt>Shift</dt><dd>Move faster</dd><dt>L / Delete</dt><dd>Select listener / remove speaker</dd><dt>Home</dt><dd>Fit the room</dd><dt>Ctrl/Cmd + Z</dt><dd>Undo; add Shift to redo</dd></dl><p>Focus the canvas first. Shortcuts do not take over form fields.</p></details>
+    <details><summary>Save, export and recover</summary><p>Scenes save locally when browser storage is available. <strong>Export</strong> creates a JSON backup; <strong>Import</strong> loads one. Undo restores a replaced scene. <strong>PNG</strong> exports the room view; arrivals CSV exports every path, including rows beyond the 48-row display limit.</p><p>No scene is uploaded. Audio starts only by request and pauses when this tab is hidden. A stalled worker switches to a fallback. For slower devices, choose Fast map or No sound map.</p></details>
+    <details><summary>What this model leaves out</summary><p>A convex room, distance attenuation, directional sine sources, and one reflection per wall, floor or ceiling path. Materials are illustrative. Optional air loss is a heuristic.</p><p>No furniture obstruction, diffraction, transmission, late reverberation, full-wave solution or calibration. The 3D view is orthographic, and the map is a slice—not a volume. Surround presets are layouts, not multichannel decoders. Level contours connect sampled estimates; they add no acoustic resolution. Animated dots are slowed guides, not sound-speed waves.</p><p>Read <a href="./docs/MODEL.md" target="_blank" rel="noopener">model details</a> for equations and limits, or the <a href="./docs/GUIDE.md" target="_blank" rel="noopener">full usage guide</a>. No measurements or safety assessments should be based on this preview.</p></details>
+  </div>
+</dialog>
+<noscript><div class="fatal">JavaScript is required to run Audio Sim.</div></noscript>
+<script>if(location.protocol==='file:'){const p=document.createElement('div');p.className='fatal';p.textContent='Serve this folder over HTTP: run npm run serve (Node 20+), then open http://localhost:8080. Direct file:// loading cannot start ES modules.';document.body.append(p);}</script>
+<script type="module" src="./src/app.js"></script>
 </body>
 </html>
