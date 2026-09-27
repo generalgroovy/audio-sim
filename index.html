@@ -3,6 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>3D Speaker Simulator</title>
   <style>
     body { margin: 0; overflow: hidden; font-family: sans-serif; }
@@ -22,10 +23,12 @@
 <body>
 
 <div id="ui">
-  <div>Volume</div>
+  <button id="toggleAudio" aria-pressed="false">Start audio</button>
+  <p id="audioStatus" role="status">Audio stopped. Use WASD to move the listener.</p>
+  <label for="volume">Volume</label><br>
   <input id="volume" type="range" min="0" max="1" step="0.01" value="0.5">
 
-  <div>Frequency</div>
+  <br><label for="freq">Frequency</label><br>
   <input id="freq" type="range" min="100" max="2000" step="1" value="440">
 
   <br>
@@ -58,6 +61,10 @@ scene.add(light);
 
 // ===== AUDIO SETUP =====
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = audioCtx.createGain();
+masterGain.gain.value = 0;
+masterGain.connect(audioCtx.destination);
+let audioEnabled = false;
 
 const speakers = [];
 
@@ -84,7 +91,7 @@ function createSpeaker(x=0,y=1,z=0) {
 
   panner.panningModel = "HRTF";
 
-  osc.connect(filter).connect(gain).connect(panner).connect(audioCtx.destination);
+  osc.connect(filter).connect(gain).connect(panner).connect(masterGain);
   osc.start();
 
   const speaker = { mesh, osc, gain, filter, panner };
@@ -99,6 +106,32 @@ let selectedSpeaker = createSpeaker(1,1,0);
 // ===== UI =====
 const volumeSlider = document.getElementById("volume");
 const freqSlider = document.getElementById("freq");
+const toggleAudio = document.getElementById("toggleAudio");
+const audioStatus = document.getElementById("audioStatus");
+
+toggleAudio.onclick = async () => {
+  toggleAudio.disabled = true;
+  try {
+    if (!audioEnabled) await audioCtx.resume();
+    audioEnabled = !audioEnabled;
+    masterGain.gain.setTargetAtTime(audioEnabled ? 1 : 0, audioCtx.currentTime, 0.02);
+    toggleAudio.textContent = audioEnabled ? "Stop audio" : "Start audio";
+    toggleAudio.setAttribute("aria-pressed", String(audioEnabled));
+    audioStatus.textContent = audioEnabled ? "Audio playing. Use WASD to move the listener." : "Audio stopped.";
+  } catch {
+    audioStatus.textContent = "Audio could not start. Select Start audio to try again.";
+  } finally {
+    toggleAudio.disabled = false;
+  }
+};
+
+function selectSpeaker(speaker) {
+  selectedSpeaker = speaker;
+  volumeSlider.value = String(speaker.gain.gain.value);
+  freqSlider.value = String(speaker.osc.frequency.value);
+  speakers.forEach(s => s.mesh.material.color.set(s === speaker ? 0xffcc00 : 0xff0000));
+}
+selectSpeaker(selectedSpeaker);
 
 volumeSlider.oninput = () => {
   if(selectedSpeaker) selectedSpeaker.gain.gain.value = volumeSlider.value;
@@ -109,18 +142,18 @@ freqSlider.oninput = () => {
 };
 
 document.getElementById("addSpeaker").onclick = () => {
-  selectedSpeaker = createSpeaker(
+  selectSpeaker(createSpeaker(
     (Math.random()-0.5)*5,
     1,
     (Math.random()-0.5)*5
-  );
+  ));
 };
 
 // ===== INTERACTION (CLICK SELECT) =====
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-window.addEventListener("click", (event) => {
+renderer.domElement.addEventListener("click", (event) => {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
@@ -130,7 +163,7 @@ window.addEventListener("click", (event) => {
   const intersects = raycaster.intersectObjects(meshes);
 
   if (intersects.length > 0) {
-    selectedSpeaker = speakers.find(s => s.mesh === intersects[0].object);
+    selectSpeaker(speakers.find(s => s.mesh === intersects[0].object));
   }
 });
 
