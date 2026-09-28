@@ -16,8 +16,17 @@
       padding: 10px;
       border-radius: 8px;
     }
-    input { width: 120px; }
-    button { margin-top: 5px; }
+    #ui { box-sizing: border-box; width: min(290px, calc(100vw - 20px)); max-height: calc(100dvh - 20px); overflow-y: auto; }
+    input { width: 100%; }
+    button, select { min-height: 44px; }
+    button { margin-top: 5px; cursor: pointer; }
+    select { width: 100%; }
+    output { float: right; font-variant-numeric: tabular-nums; }
+    .actions { margin-bottom: 14px; }
+    .actions, #movement { display: flex; gap: 8px; }
+    .actions button, #movement button { flex: 1; }
+    #movement { margin-top: 10px; }
+    :focus-visible { outline: 3px solid #ffcc00; outline-offset: 2px; }
   </style>
 </head>
 <body>
@@ -25,14 +34,21 @@
 <div id="ui">
   <button id="toggleAudio" aria-pressed="false">Start audio</button>
   <p id="audioStatus" role="status">Audio stopped. Use WASD to move the listener.</p>
-  <label for="volume">Volume</label><br>
+  <label for="speakerSelect">Speaker</label>
+  <select id="speakerSelect"></select>
+  <div class="actions"><button id="addSpeaker">Add speaker</button><button id="removeSpeaker">Remove</button></div>
+  <label for="volume">Volume</label><output id="volumeValue" for="volume">50%</output><br>
   <input id="volume" type="range" min="0" max="1" step="0.01" value="0.5">
 
-  <br><label for="freq">Frequency</label><br>
+  <br><label for="freq">Frequency</label><output id="freqValue" for="freq">440 Hz</output><br>
   <input id="freq" type="range" min="100" max="2000" step="1" value="440">
 
-  <br>
-  <button id="addSpeaker">Add Speaker</button>
+  <div id="movement" role="group" aria-label="Move listener">
+    <button data-move="a" aria-label="Move left">←</button>
+    <button data-move="w" aria-label="Move forward">↑</button>
+    <button data-move="s" aria-label="Move back">↓</button>
+    <button data-move="d" aria-label="Move right">→</button>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -65,8 +81,11 @@ const masterGain = audioCtx.createGain();
 masterGain.gain.value = 0;
 masterGain.connect(audioCtx.destination);
 let audioEnabled = false;
+let audioPending = false;
+let audioStartVersion = 0;
 
 const speakers = [];
+let nextSpeakerId = 1;
 
 function createSpeaker(x=0,y=1,z=0) {
   // 3D object
@@ -94,7 +113,7 @@ function createSpeaker(x=0,y=1,z=0) {
   osc.connect(filter).connect(gain).connect(panner).connect(masterGain);
   osc.start();
 
-  const speaker = { mesh, osc, gain, filter, panner };
+  const speaker = { id: nextSpeakerId++, mesh, osc, gain, filter, panner };
   speakers.push(speaker);
 
   return speaker;
@@ -108,37 +127,84 @@ const volumeSlider = document.getElementById("volume");
 const freqSlider = document.getElementById("freq");
 const toggleAudio = document.getElementById("toggleAudio");
 const audioStatus = document.getElementById("audioStatus");
+const speakerSelect = document.getElementById("speakerSelect");
+const removeSpeakerButton = document.getElementById("removeSpeaker");
+const volumeValue = document.getElementById("volumeValue");
+const freqValue = document.getElementById("freqValue");
 
 toggleAudio.onclick = async () => {
+  if (!speakers.length) return;
+  const request = ++audioStartVersion;
+  audioPending = true;
   toggleAudio.disabled = true;
   try {
     if (!audioEnabled) await audioCtx.resume();
+    if (request !== audioStartVersion || !speakers.length) return;
     audioEnabled = !audioEnabled;
     masterGain.gain.setTargetAtTime(audioEnabled ? 1 : 0, audioCtx.currentTime, 0.02);
     toggleAudio.textContent = audioEnabled ? "Stop audio" : "Start audio";
     toggleAudio.setAttribute("aria-pressed", String(audioEnabled));
     audioStatus.textContent = audioEnabled ? "Audio playing. Use WASD to move the listener." : "Audio stopped.";
   } catch {
-    audioStatus.textContent = "Audio could not start. Select Start audio to try again.";
+    if (request === audioStartVersion) audioStatus.textContent = "Audio could not start. Select Start audio to try again.";
   } finally {
-    toggleAudio.disabled = false;
+    audioPending = false;
+    toggleAudio.disabled = !speakers.length;
   }
 };
 
 function selectSpeaker(speaker) {
   selectedSpeaker = speaker;
-  volumeSlider.value = String(speaker.gain.gain.value);
-  freqSlider.value = String(speaker.osc.frequency.value);
+  volumeSlider.disabled = freqSlider.disabled = removeSpeakerButton.disabled = !speaker;
+  speakerSelect.disabled = !speaker;
+  toggleAudio.disabled = audioPending || !speakers.length;
+  speakerSelect.innerHTML = speakers.length
+    ? speakers.map(s => `<option value="${s.id}">Speaker ${s.id}</option>`).join('')
+    : '<option>No speakers</option>';
+  speakerSelect.value = speaker ? String(speaker.id) : '';
+  volumeSlider.value = String(speaker ? speaker.gain.gain.value : 0);
+  freqSlider.value = String(speaker ? speaker.osc.frequency.value : 440);
+  updateReadouts();
   speakers.forEach(s => s.mesh.material.color.set(s === speaker ? 0xffcc00 : 0xff0000));
 }
+function updateReadouts() {
+  volumeValue.textContent = `${Math.round(Number(volumeSlider.value) * 100)}%`;
+  freqValue.textContent = `${freqSlider.value} Hz`;
+}
 selectSpeaker(selectedSpeaker);
+speakerSelect.onchange = () => selectSpeaker(speakers.find(s => String(s.id) === speakerSelect.value));
+
+function removeSelectedSpeaker() {
+  if (!selectedSpeaker) return;
+  const speaker = selectedSpeaker;
+  const index = speakers.indexOf(speaker);
+  speakers.splice(index, 1);
+  speaker.osc.stop();
+  [speaker.osc, speaker.filter, speaker.gain, speaker.panner].forEach(node => node.disconnect());
+  scene.remove(speaker.mesh);
+  speaker.mesh.geometry.dispose();
+  speaker.mesh.material.dispose();
+  selectSpeaker(speakers[Math.min(index, speakers.length - 1)] || null);
+  if (!speakers.length) {
+    audioStartVersion++;
+    audioEnabled = false;
+    masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+    toggleAudio.textContent = 'Start audio';
+    toggleAudio.setAttribute('aria-pressed', 'false');
+    audioStatus.textContent = 'No speakers. Add a speaker to continue.';
+    document.getElementById('addSpeaker').focus();
+  } else speakerSelect.focus();
+}
+removeSpeakerButton.onclick = removeSelectedSpeaker;
 
 volumeSlider.oninput = () => {
-  if(selectedSpeaker) selectedSpeaker.gain.gain.value = volumeSlider.value;
+  if(selectedSpeaker) selectedSpeaker.gain.gain.value = Number(volumeSlider.value);
+  updateReadouts();
 };
 
 freqSlider.oninput = () => {
-  if(selectedSpeaker) selectedSpeaker.osc.frequency.value = freqSlider.value;
+  if(selectedSpeaker) selectedSpeaker.osc.frequency.value = Number(freqSlider.value);
+  updateReadouts();
 };
 
 document.getElementById("addSpeaker").onclick = () => {
@@ -147,6 +213,7 @@ document.getElementById("addSpeaker").onclick = () => {
     1,
     (Math.random()-0.5)*5
   ));
+  if (speakers.length === 1) audioStatus.textContent = 'Audio stopped. Select Start audio.';
 };
 
 // ===== INTERACTION (CLICK SELECT) =====
@@ -181,12 +248,20 @@ function updateAudio() {
 }
 
 // ===== BASIC CAMERA CONTROL =====
-window.addEventListener("keydown", (e) => {
+function moveListener(direction) {
   const speed = 0.3;
-  if (e.key === "w") camera.position.z -= speed;
-  if (e.key === "s") camera.position.z += speed;
-  if (e.key === "a") camera.position.x -= speed;
-  if (e.key === "d") camera.position.x += speed;
+  if (direction === "w") camera.position.z -= speed;
+  if (direction === "s") camera.position.z += speed;
+  if (direction === "a") camera.position.x -= speed;
+  if (direction === "d") camera.position.x += speed;
+}
+window.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target?.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(e.target?.tagName)) return;
+  const direction = e.key.toLowerCase();
+  if ('wasd'.includes(direction) && direction.length === 1) moveListener(direction);
+});
+document.querySelectorAll('[data-move]').forEach(button => {
+  button.onclick = () => moveListener(button.dataset.move);
 });
 
 // ===== LOOP =====

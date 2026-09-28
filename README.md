@@ -5,12 +5,12 @@
 ## Use it
 
 1. Select **Start audio**. Output starts muted and only enables after this action; **Stop audio** mutes it again.
-2. Click a speaker in the scene to select it. The selected speaker is yellow, and the volume/frequency sliders show that speaker's settings.
-3. Adjust **Volume** or **Frequency** for the selected speaker.
+2. Click a speaker in the scene or choose it from the **Speaker** list. The selected speaker is yellow, and the volume/frequency sliders show that speaker's settings.
+3. Adjust **Volume** or **Frequency** for the selected speaker; the readouts show its percentage and Hz.
 4. **Add Speaker** adds another independently sounding speaker at a random position and selects it.
-5. Use **W / A / S / D** to move the listener through the room. The camera and audio listener move together.
+5. Use **W / A / S / D** or the four arrow buttons to move the listener through the room. The camera and audio listener move together.
 
-Sliders affect the selected speaker; Start/Stop affects all speakers. Speakers remain sounding when deselected. There is currently no remove-speaker control: reload to reset the scene. No scene persistence, file import, recording or export is implemented.
+Sliders affect the selected speaker; Start/Stop affects all speakers. Speakers remain sounding when deselected. **Remove** stops and removes the selected speaker. Removing the last speaker mutes output; add another and select **Start audio** to continue. No scene persistence, file import, recording or export is implemented.
 
 ## Run
 
