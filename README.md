@@ -10,7 +10,9 @@
 4. **Add Speaker** adds another independently sounding speaker at a random position and selects it.
 5. Use **W / A / S / D** or the four arrow buttons to move the listener through the room. The camera and audio listener move together.
 
-Sliders affect the selected speaker; Start/Stop affects all speakers. Speakers remain sounding when deselected. **Remove** stops and removes the selected speaker. Removing the last speaker mutes output; add another and select **Start audio** to continue. No scene persistence, file import, recording or export is implemented.
+Sliders affect the selected speaker; Start/Stop affects all speakers. Speakers remain sounding when deselected. **Remove** stops and removes the selected speaker. Removing the last speaker mutes output; add another and select **Start audio** to continue. **Scene** provides deterministic Single tone, Stereo pair, and Four corners presets. Apply resets listener/speakers and stops audio. **Save** keeps one scene in this browser; **Restore** validates it before replacement and always restores muted. Blocked/full/corrupt storage leaves the active scene usable. Scene files, recording, and export are not implemented.
+
+**Position** edits selected-speaker X/Y/Z coordinates; the readout shows the listener’s X/Z position. Speaker positions are limited to the displayed scene bounds, frequency to 100–2000 Hz, and scenes to 32 speakers. **Info** contains movement and simulation details. On narrow screens the scrollable controls sit at the bottom within 46% of viewport height, leaving the room visible; Start/Stop stays at the top of that pane. Local storage is site/browser-specific and is not a portable backup.
 
 ## Run
 
@@ -30,4 +32,4 @@ With Node.js 18 or newer:
 node --test tests/audio.test.cjs
 ```
 
-The tests cover initial mute, explicit start/stop, rejected audio startup and selected-speaker controls with API doubles. In a real browser, verify Start/Stop, add/select speakers and move the listener. Human listening remains necessary to judge the actual audio device and spatial effect. Walls are visual guides: reflections, room dimensions, absorption and speaker calibration are not simulated or validated.
+The tests cover initial mute, explicit start/stop, rejected/stale audio startup, selected-speaker controls, scene round trips, invalid scene preservation, storage failure and position/count limits with API doubles. In a real browser, verify Start/Stop, add/select speakers and move the listener. Human listening remains necessary to judge the actual audio device and spatial effect. Walls are visual guides: reflections, room dimensions, absorption and speaker calibration are not simulated or validated.
