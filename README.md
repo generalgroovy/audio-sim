@@ -4,15 +4,21 @@
 
 ## Use it
 
-1. Select **Start audio**. Output starts muted and only enables after this action; **Stop audio** mutes it again.
-2. Click a speaker in the scene or choose it from the **Speaker** list. The selected speaker is yellow, and the volume/frequency sliders show that speaker's settings.
-3. Adjust **Volume** or **Frequency** for the selected speaker; the readouts show its percentage and Hz.
-4. **Add Speaker** adds another independently sounding speaker at a random position and selects it.
-5. Use **W / A / S / D** or the four arrow buttons to move the listener through the room. The camera and audio listener move together.
+1. The **Room map** shows speakers as numbers and you as the blue arrow, facing forward. Drag a marker to move it; select a speaker to edit its volume and frequency.
+2. Select **Start audio** to listen. **Stop audio** mutes the output. Every fresh page, restored scene, arrangement switch and Undo starts muted.
+3. Use **A / B** inside **Arrange & compare** to keep two independent arrangements. **Copy A to B** gives you a starting point for a variation. Switching retains your edits and stops audio; start explicitly to listen again.
+4. **Undo** recovers the last edit, removal, preset, restore or comparison overwrite (up to 40 changes this session). A slider or map drag is one change.
+5. **Save** stores both arrangements in this browser. **Restore** validates the entire save before replacing your current work; older single-scene saves remain compatible. Restore itself can be undone.
 
-Sliders affect the selected speaker; Start/Stop affects all speakers. Speakers remain sounding when deselected. **Remove** stops and removes the selected speaker. Removing the last speaker mutes output; add another and select **Start audio** to continue. **Scene** provides deterministic Single tone, Stereo pair, and Four corners presets. Apply resets listener/speakers and stops audio. **Save** keeps one scene in this browser; **Restore** validates it before replacement and always restores muted. Blocked/full/corrupt storage leaves the active scene usable. Scene files, recording, and export are not implemented.
+Sliders affect the selected speaker; Start/Stop affects all speakers. Speakers remain sounding when deselected. **Remove** stops and removes the selected speaker. Removing the last speaker mutes output; add another and select **Start audio** to continue. Presets provide Single tone, Stereo pair, and Four corners. Apply resets the current arrangement and stops audio. Blocked/full/corrupt storage leaves the active scene usable. Scene files, recording, and export are not implemented.
 
-**Position** edits selected-speaker X/Y/Z coordinates; the readout shows the listener’s X/Z position. Speaker positions are limited to the displayed scene bounds, frequency to 100–2000 Hz, and scenes to 32 speakers. **Info** contains movement and simulation details. On narrow screens the scrollable controls sit at the bottom within 46% of viewport height, leaving the room visible; Start/Stop stays at the top of that pane. Local storage is site/browser-specific and is not a portable backup.
+**3D view** preserves the selected speaker and arrangement. Return to Room map to find speakers behind you. **Position** edits exact X/Y/Z speaker coordinates. Tab to a map marker and use arrows to move it by 0.5 scene units, or Shift+arrow for 0.1. WASD and the four arrow buttons move the listener; **Home** restores the initial listener position. The Speaker list selects overlapping or crowded markers.
+
+Speaker positions are bounded to X/Z ±5 and Y 0–5, frequencies to 100–2000 Hz, and scenes to 32 speakers. Existing saves with a distant listener stay valid; the map expands and Home can recover the view. The listener faces negative Z in both views. Scene units do not establish real-world room dimensions.
+
+On phones, the map or 3D canvas stays above the scrollable controls. Start/Stop remains at the top of that pane. Local storage is site/browser-specific, not a portable backup. History resets on reload; saved A/B arrangements remain available through Restore.
+
+Each speaker retains its requested level. Actual pre-panning gains share a 0.7 total amplitude budget as more/louder sources are added. This is not a measured loudness guarantee; device volume and listening remain the user's controls. The browser's HRTF panner uses inverse-distance attenuation.
 
 ## Run
 
@@ -32,4 +38,6 @@ With Node.js 18 or newer:
 node --test tests/audio.test.cjs
 ```
 
-The tests cover initial mute, explicit start/stop, rejected/stale audio startup, selected-speaker controls, scene round trips, invalid scene preservation, storage failure and position/count limits with API doubles. In a real browser, verify Start/Stop, add/select speakers and move the listener. Human listening remains necessary to judge the actual audio device and spatial effect. Walls are visual guides: reflections, room dimensions, absorption and speaker calibration are not simulated or validated.
+The tests cover initial mute, explicit start/stop, rejected/stale audio startup, selected-speaker controls, A/B scene round trips, legacy saves, invalid scene preservation, storage failure, gain/count bounds, compound Undo, precision keyboard edits, and stale pointer events after a scene replacement with API doubles.
+
+The Quality GitHub Actions workflow also runs actual Chromium interactions at 1366, 390 and 320 pixels, saving screenshots and a JSON receipt. The browser suite covers drag/Undo, keyboard placement, explicit audio state, A/B edit preservation, save/reload/restore, removal recovery and map/3D switching. See [the quality record](PROJECT-QUALITY-2026-10-06.md) for evidence and limitations. Human listening remains necessary to judge the actual audio device and spatial effect. Walls are visual guides: reflections, room dimensions, absorption and speaker calibration are not simulated or validated.

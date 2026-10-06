@@ -40,22 +40,52 @@
     #movement { margin-top: 10px; }
     details { margin: 10px 0; } summary { cursor: pointer; padding: 7px 0; } details p { font-size: 13px; line-height: 1.5; } .position-fields { display:flex; gap:8px; } .position-fields label { min-width:0; flex:1; } .position-fields input { box-sizing:border-box; min-height:36px; } #listenerPosition { font-size:12px; color:#cbd5e1; }
     :focus-visible { outline: 3px solid #ffcc00; outline-offset: 2px; }
+    .stage { pointer-events:none; position:absolute; inset:0 0 0 310px; display:grid; place-items:center; color:#eaf2fa; }
+    .view-switch { pointer-events:auto; position:absolute; right:12px; top:10px; display:flex; gap:6px; z-index:2; }
+    .view-switch button[aria-pressed=true], .comparison button[aria-pressed=true] { background:#365d55; border-color:#8bddc4; }
+    #roomMap { pointer-events:auto; position:relative; width:min(calc(100% - 50px), calc(100dvh - 140px)); aspect-ratio:1; border:1px solid #617383; border-radius:8px; background-color:#182530; background-image:linear-gradient(#ffffff0b 1px,transparent 1px),linear-gradient(90deg,#ffffff0b 1px,transparent 1px); background-size:7.142857% 7.142857%; touch-action:none; }
+    #roomMap::before { content:""; position:absolute; inset:var(--room-inset,14.285714%); border:2px solid #7790a5; pointer-events:none; }
+    .map-marker { position:absolute; transform:translate(-50%,-50%); margin:0; min-width:44px; min-height:44px; padding:2px; border-radius:50%; background:#3c4c60; border:2px solid #a5b7c9; z-index:1; touch-action:none; }
+    .map-marker[aria-pressed=true] { background:#655610; border:3px solid #ffda48; color:#fff; z-index:2; }
+    .map-marker.listener { background:#164f56; border-radius:8px; border-color:#8be0e5; z-index:3; }
+    #mapHint { position:absolute; bottom:12px; left:15px; right:15px; text-align:center; font-size:12px; color:#b8ccd9; margin:0; }
+    #mapStatus { font-size:12px; line-height:1.45; min-height:2.9em; color:#cbd9e6; }
+    #undo { min-width:62px; }
+    .comparison { display:flex; gap:6px; } .comparison button { flex:1; }
+    .compact { display:flex; align-items:center; justify-content:space-between; gap:8px; } .compact p { margin:0; }
+    [hidden] { display:none !important; }
+    input[type=range] { min-height:28px; margin:4px 0 10px; }
     @media(max-width:600px) {
       #ui { top:auto; bottom:10px; width:calc(100vw - 20px); max-height:46dvh; overscroll-behavior:contain; scrollbar-width:thin; }
       #movement { position:relative; }
+      .stage { inset:0 0 auto; height:calc(54dvh - 20px); padding-top:35px; box-sizing:border-box; }
+      #roomMap { width:min(calc(100% - 54px), calc(54dvh - 105px)); }
+      .view-switch { top:4px; right:10px; } .view-switch button { min-height:36px; padding:4px 10px; }
+      #mapHint { bottom:0; font-size:11px; }
+      .map-marker { min-width:40px; min-height:40px; }
+
     }
   </style>
 </head>
 <body>
 
+<main class="stage" aria-label="Spatial scene">
+  <div class="view-switch" role="group" aria-label="Scene view"><button id="mapView" aria-pressed="true">Room map</button><button id="perspectiveView" aria-pressed="false">3D view</button></div>
+  <div id="roomMap" role="group" aria-label="Room map. Drag a marker or use arrow keys on it." aria-describedby="mapHint"></div>
+  <p id="mapHint">Numbers are speakers · ↑ is you, facing forward<br>Drag a marker or focus it and use arrow keys.</p>
+</main>
 <div id="ui">
   <div class="transport"><button id="toggleAudio" aria-pressed="false">Start audio</button>
   <p id="audioStatus" role="status">Audio stopped.</p></div>
-  <details><summary>Scene</summary>
+  <div class="compact"><p id="arrangementLabel">Arrangement A</p><button id="undo" disabled>Undo</button></div>
+  <details><summary>Arrange &amp; compare</summary>
+    <div class="comparison" role="group" aria-label="Arrangement"><button id="arrangementA" aria-pressed="true">A</button><button id="arrangementB" aria-pressed="false">B</button></div>
+    <button id="copyArrangement">Copy A to B</button>
+    <p>Each keeps your edits. Switching stops audio. Undo restores the last change.</p>
     <label for="scenePreset">Preset</label><select id="scenePreset"><option value="single">Single tone</option><option value="stereo">Stereo pair</option><option value="surround">Four corners</option></select>
     <div class="actions"><button id="applyScene">Apply</button><button id="saveScene">Save</button><button id="loadScene">Restore</button></div>
-    <p id="sceneStatus" role="status"></p>
   </details>
+  <p id="sceneStatus" role="status"></p>
   <label for="speakerSelect">Speaker</label>
   <select id="speakerSelect"></select>
   <div class="actions"><button id="addSpeaker">Add speaker</button><button id="removeSpeaker">Remove</button></div>
@@ -68,14 +98,15 @@
   <details><summary>Position</summary>
     <div class="position-fields"><label>X<input id="speakerX" type="number" min="-5" max="5" step="0.1"></label><label>Y<input id="speakerY" type="number" min="0" max="5" step="0.1"></label><label>Z<input id="speakerZ" type="number" min="-5" max="5" step="0.1"></label></div>
   </details>
-  <p id="listenerPosition" aria-live="off"></p>
+  <p id="mapStatus" aria-live="off"></p>
+  <div class="compact"><p id="listenerPosition" aria-live="off"></p><button id="homeListener">Home</button></div>
   <div id="movement" role="group" aria-label="Move listener">
     <button data-move="a" aria-label="Move left">←</button>
     <button data-move="w" aria-label="Move forward">↑</button>
     <button data-move="s" aria-label="Move back">↓</button>
     <button data-move="d" aria-label="Move right">→</button>
   </div>
-  <details><summary>Info</summary><p>WASD or arrows move the listener. Yellow marks the selected speaker. Scene presets and Restore stop audio. Save stores one scene in this browser.</p><p>Spatial audio demonstration; walls do not simulate reflections or absorption.</p></details>
+  <details><summary>Info</summary><p>Yellow marks the selected speaker. The blue arrow is the listener, facing the top of the map. Drag markers or focus one and use arrows (Shift for smaller steps). WASD and the buttons move the listener; Home brings you back. Position gives exact speaker coordinates. Undo, presets, A/B and Restore stop audio. Save stores both arrangements in this browser.</p><p>Spatial audio demonstration; walls do not simulate reflections or absorption. Levels share a bounded mix budget as speakers are added. Headphones can make browser panning easier to compare; device volume is yours to control.</p></details>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -102,6 +133,7 @@ const room = new THREE.Mesh(
   new THREE.BoxGeometry(10, 5, 10),
   new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true })
 );
+room.position.y = 2.5;
 scene.add(room);
 
 // Light (optional visual clarity)
@@ -119,6 +151,11 @@ let audioPending = false;
 let audioStartVersion = 0;
 
 const speakers = [];
+let arrangements = null;
+let activeArrangement = 'A';
+const history = [];
+let gestureBefore = null;
+let applyingScene = false;
 let nextSpeakerId = 1;
 
 function createSpeaker(x=0,y=1,z=0) {
@@ -141,14 +178,16 @@ function createSpeaker(x=0,y=1,z=0) {
 
   gain.gain.value = 0.5;
   filter.type = "lowpass";
+  filter.frequency.value = 20000;
 
   panner.panningModel = "HRTF";
 
   osc.connect(filter).connect(gain).connect(panner).connect(masterGain);
   osc.start();
 
-  const speaker = { id: nextSpeakerId++, mesh, osc, gain, filter, panner };
+  const speaker = { id: nextSpeakerId++, mesh, osc, gain, filter, panner, volume: 0.5 };
   speakers.push(speaker);
+  updateMix();
 
   return speaker;
 }
@@ -198,7 +237,7 @@ function selectSpeaker(speaker) {
     ? speakers.map(s => `<option value="${s.id}">Speaker ${s.id}</option>`).join('')
     : '<option>No speakers</option>';
   speakerSelect.value = speaker ? String(speaker.id) : '';
-  volumeSlider.value = String(speaker ? speaker.gain.gain.value : 0);
+  volumeSlider.value = String(speaker ? speaker.volume : 0);
   freqSlider.value = String(speaker ? speaker.osc.frequency.value : 440);
   ['X','Y','Z'].forEach(axis => {
     const input = document.getElementById('speaker' + axis);
@@ -207,6 +246,7 @@ function selectSpeaker(speaker) {
   });
   updateReadouts();
   speakers.forEach(s => s.mesh.material.color.set(s === speaker ? 0xffcc00 : 0xff0000));
+  if (arrangements) updateMap();
 }
 function updateReadouts() {
   volumeValue.textContent = `${Math.round(Number(volumeSlider.value) * 100)}%`;
@@ -217,9 +257,11 @@ speakerSelect.onchange = () => selectSpeaker(speakers.find(s => String(s.id) ===
 
 function removeSelectedSpeaker() {
   if (!selectedSpeaker) return;
+  if (!applyingScene) remember();
   const speaker = selectedSpeaker;
   const index = speakers.indexOf(speaker);
   speakers.splice(index, 1);
+  updateMix();
   speaker.osc.stop();
   [speaker.osc, speaker.filter, speaker.gain, speaker.panner].forEach(node => node.disconnect());
   scene.remove(speaker.mesh);
@@ -240,17 +282,21 @@ function removeSelectedSpeaker() {
 removeSpeakerButton.onclick = removeSelectedSpeaker;
 
 volumeSlider.oninput = () => {
-  if(selectedSpeaker) selectedSpeaker.gain.gain.value = Number(volumeSlider.value);
+  beginGesture();
+  if(selectedSpeaker) selectedSpeaker.volume = Number(volumeSlider.value);
+  updateMix();
   updateReadouts();
 };
 
 freqSlider.oninput = () => {
+  beginGesture();
   if(selectedSpeaker) selectedSpeaker.osc.frequency.value = Number(freqSlider.value);
   updateReadouts();
 };
 
 document.getElementById("addSpeaker").onclick = () => {
   if (speakers.length >= 32) { audioStatus.textContent = 'Scene limit: 32 speakers. Remove one before adding another.'; return; }
+  remember();
   selectSpeaker(createSpeaker(
     (Math.random()-0.5)*5,
     1,
@@ -267,7 +313,7 @@ const SCENE_PRESETS = {
   surround: [[-3,1,-3,220,0.15],[3,1,-3,330,0.15],[-3,1,3,440,0.15],[3,1,3,550,0.15]]
 };
 function serializeScene() {
-  return {version:1, listener:[camera.position.x,camera.position.y,camera.position.z], speakers:speakers.map(s => [s.mesh.position.x,s.mesh.position.y,s.mesh.position.z,s.osc.frequency.value,s.gain.gain.value])};
+  return {version:1, listener:[camera.position.x,camera.position.y,camera.position.z], speakers:speakers.map(s => [s.mesh.position.x,s.mesh.position.y,s.mesh.position.z,s.osc.frequency.value,s.volume])};
 }
 function validateScene(data) {
   const finite = (value,min,max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
@@ -276,15 +322,20 @@ function validateScene(data) {
 }
 function applyScene(data) {
   validateScene(data);
+  drag = null;
   audioStartVersion++;
   audioPending = false;
   audioEnabled = false;
-  masterGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.02);
+  masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+  masterGain.gain.setValueAtTime(0,audioCtx.currentTime);
   toggleAudio.textContent = 'Start audio';
   toggleAudio.setAttribute('aria-pressed','false');
+  applyingScene = true;
   while (speakers.length) { selectedSpeaker = speakers[0]; removeSelectedSpeaker(); }
+  applyingScene = false;
   nextSpeakerId = 1;
-  data.speakers.forEach(([x,y,z,hz,volume]) => { const speaker = createSpeaker(x,y,z); speaker.osc.frequency.value = hz; speaker.gain.gain.value = volume; });
+  data.speakers.forEach(([x,y,z,hz,volume]) => { const speaker = createSpeaker(x,y,z); speaker.osc.frequency.value = hz; speaker.volume = volume; });
+  updateMix();
   camera.position.set(...data.listener);
   selectSpeaker(speakers[0] || null);
   updateListenerReadout();
@@ -292,19 +343,22 @@ function applyScene(data) {
 }
 document.getElementById('applyScene').onclick = () => {
   const preset = SCENE_PRESETS[document.getElementById('scenePreset').value];
+  remember();
   applyScene({version:1,listener:[0,2,6],speakers:preset});
   document.getElementById('sceneStatus').textContent = 'Preset applied.';
   document.getElementById('applyScene').focus();
 };
 document.getElementById('saveScene').onclick = () => {
-  try { localStorage.setItem(SCENE_KEY,JSON.stringify(serializeScene())); document.getElementById('sceneStatus').textContent = 'Scene saved in this browser.'; }
+  try { localStorage.setItem(SCENE_KEY,JSON.stringify(serializeWorkspace())); document.getElementById('sceneStatus').textContent = 'Both arrangements saved in this browser.'; }
   catch { document.getElementById('sceneStatus').textContent = 'Browser storage is unavailable. Scene was not saved.'; }
 };
 document.getElementById('loadScene').onclick = () => {
   try {
     const raw = localStorage.getItem(SCENE_KEY);
     if (!raw) throw new Error('No saved scene in this browser.');
-    applyScene(JSON.parse(raw));
+    const data = validateWorkspace(JSON.parse(raw));
+    remember();
+    restoreWorkspace(data);
     document.getElementById('sceneStatus').textContent = 'Scene restored. Audio stopped.';
   } catch { document.getElementById('sceneStatus').textContent = 'No usable saved scene. Your current scene is unchanged.'; }
   document.getElementById('loadScene').focus();
@@ -314,10 +368,207 @@ document.getElementById('loadScene').onclick = () => {
   input.onchange = () => {
     if (!selectedSpeaker) return;
     const value = Number(input.value), min = axis === 'Y' ? 0 : -5;
-    if (input.value.trim() && Number.isFinite(value) && value >= min && value <= 5) selectedSpeaker.mesh.position[axis.toLowerCase()] = value;
+    if (input.value.trim() && Number.isFinite(value) && value >= min && value <= 5 && value !== selectedSpeaker.mesh.position[axis.toLowerCase()]) { remember(); selectedSpeaker.mesh.position[axis.toLowerCase()] = value; }
+    updateMap();
     input.value = String(selectedSpeaker.mesh.position[axis.toLowerCase()]);
   };
 });
+
+// The requested level is separate from the normalized gain, so changing selection,
+// adding a voice, or restoring a scene never rewrites a speaker's intended level.
+function updateMix() {
+  const total = speakers.reduce((sum, speaker) => sum + speaker.volume, 0);
+  const scale = 0.7 / Math.max(1, total);
+  speakers.forEach(speaker => { speaker.gain.gain.value = speaker.volume * scale; });
+}
+
+function serializeWorkspace() {
+  arrangements[activeArrangement] = serializeScene();
+  return JSON.parse(JSON.stringify({version:2, active:activeArrangement, arrangements}));
+}
+function validateWorkspace(data) {
+  if (data?.version === 1) {
+    validateScene(data);
+    return {version:2,active:'A',arrangements:{A:data,B:JSON.parse(JSON.stringify(data))}};
+  }
+  if (data?.version !== 2 || !['A','B'].includes(data.active) || !data.arrangements) throw Error('Invalid workspace');
+  validateScene(data.arrangements.A);
+  validateScene(data.arrangements.B);
+  return JSON.parse(JSON.stringify(data));
+}
+function capture() { return {workspace:serializeWorkspace(), selected:speakers.indexOf(selectedSpeaker)}; }
+function restoreWorkspace(data, selected = 0) {
+  const valid = validateWorkspace(data);
+  activeArrangement = valid.active;
+  arrangements = valid.arrangements;
+  applyScene(arrangements[activeArrangement]);
+  selectSpeaker(speakers[Math.max(0,selected)] || speakers[0] || null);
+  updateComparison();
+}
+function pushHistory(before) {
+  if (!before || JSON.stringify(before.workspace) === JSON.stringify(serializeWorkspace())) return;
+  history.push(before);
+  if (history.length > 40) history.shift();
+  document.getElementById('undo').disabled = false;
+}
+function beginGesture() { if (!gestureBefore) gestureBefore = capture(); }
+function endGesture() { const before = gestureBefore; gestureBefore = null; pushHistory(before); }
+function remember() {
+  endGesture();
+  const before = capture();
+  // Discrete actions remember their pre-change state; no-op Undo entries are
+  // harmlessly skipped by undoChange, while compound pointer edits use one entry.
+  history.push(before);
+  if (history.length > 40) history.shift();
+  document.getElementById('undo').disabled = false;
+}
+function undoChange() {
+  endGesture();
+  let before;
+  const current = JSON.stringify(serializeWorkspace());
+  while (history.length) {
+    before = history.pop();
+    if (JSON.stringify(before.workspace) !== current) break;
+    before = null;
+  }
+  if (before) {
+    restoreWorkspace(before.workspace, before.selected);
+    document.getElementById('sceneStatus').textContent = 'Change undone. Audio stopped.';
+  }
+  document.getElementById('undo').disabled = !history.length;
+  document.getElementById('undo').focus();
+}
+function updateComparison() {
+  document.getElementById('arrangementLabel').textContent = `Arrangement ${activeArrangement}`;
+  ['A','B'].forEach(key => document.getElementById('arrangement'+key).setAttribute('aria-pressed',String(key === activeArrangement)));
+  document.getElementById('copyArrangement').textContent = `Copy ${activeArrangement} to ${activeArrangement === 'A' ? 'B' : 'A'}`;
+}
+function switchArrangement(key) {
+  if (key === activeArrangement) return;
+  remember();
+  arrangements[activeArrangement] = serializeScene();
+  activeArrangement = key;
+  applyScene(arrangements[key]);
+  updateComparison();
+  document.getElementById('sceneStatus').textContent = `Arrangement ${key}. Audio stopped.`;
+  document.getElementById('arrangement'+key).focus();
+}
+arrangements = {A:serializeScene(),B:serializeScene()};
+document.getElementById('undo').onclick = undoChange;
+['A','B'].forEach(key => document.getElementById('arrangement'+key).onclick = () => switchArrangement(key));
+document.getElementById('copyArrangement').onclick = () => {
+  remember();
+  const other = activeArrangement === 'A' ? 'B' : 'A';
+  arrangements[other] = serializeScene();
+  document.getElementById('sceneStatus').textContent = `Copied ${activeArrangement} to ${other}. Undo can restore the previous ${other}.`;
+};
+[volumeSlider,freqSlider].forEach(input => {
+  input.onchange = endGesture;
+  input.addEventListener('blur',endGesture);
+});
+document.getElementById('homeListener').onclick = () => {
+  remember();
+  camera.position.set(0,2,6);
+  updateListenerReadout();
+};
+
+const roomMap = document.getElementById('roomMap');
+const mapMarkers = new Map();
+let mapExtent = 7;
+let drag = null;
+function mapObject(key) { return key === 'listener' ? camera : speakers.find(s => String(s.id) === key)?.mesh; }
+function updateMap() {
+  if (!mapMarkers) return;
+  // Old saves can place the listener far outside the room. Keep it visible and
+  // provide Home, rather than silently altering its saved position.
+  if (!drag) mapExtent = Math.max(7,Math.abs(camera.position.x)+1,Math.abs(camera.position.z)+1);
+  roomMap.style.setProperty('--room-inset',`${(1-5/mapExtent)*50}%`);
+  const entries = [{key:'listener',position:camera.position},...speakers.map(s => ({key:String(s.id),position:s.mesh.position,speaker:s}))];
+  const keys = new Set(entries.map(item => item.key));
+  for (const [key,marker] of mapMarkers) if (!keys.has(key)) { marker.remove(); mapMarkers.delete(key); }
+  for (const item of entries) {
+    let marker = mapMarkers.get(item.key);
+    if (!marker) {
+      marker = document.createElement('button');
+      marker.className = 'map-marker' + (item.key === 'listener' ? ' listener' : '');
+      marker.dataset.marker = item.key;
+      marker.textContent = item.key === 'listener' ? '↑' : item.key;
+      roomMap.appendChild(marker);
+      mapMarkers.set(item.key,marker);
+    }
+    marker.style.left = `${50 + item.position.x / (2*mapExtent)*100}%`;
+    marker.style.top = `${50 + item.position.z / (2*mapExtent)*100}%`;
+    const name = item.key === 'listener' ? 'Listener' : `Speaker ${item.key}`;
+    marker.setAttribute('aria-label',`${name}, X ${item.position.x.toFixed(1)}, Z ${item.position.z.toFixed(1)}. Arrow keys move.`);
+    marker.setAttribute('aria-pressed',String(item.speaker === selectedSpeaker));
+    marker.title = name;
+  }
+  const distance = selectedSpeaker ? Math.hypot(selectedSpeaker.mesh.position.x-camera.position.x,selectedSpeaker.mesh.position.y-camera.position.y,selectedSpeaker.mesh.position.z-camera.position.z) : 0;
+  document.getElementById('mapStatus').textContent = selectedSpeaker ? `Speaker ${selectedSpeaker.id} · ${distance.toFixed(1)} scene units from you` : 'Add a speaker to explore.';
+}
+function placeOnMap(key,x,z) {
+  const object = mapObject(key);
+  if (!object) return;
+  const limit = key === 'listener' ? 100 : 5;
+  object.position.x = Math.max(-limit,Math.min(limit,Math.round(x*10)/10));
+  object.position.z = Math.max(-limit,Math.min(limit,Math.round(z*10)/10));
+  if (key !== 'listener') selectSpeaker(speakers.find(s => String(s.id) === key));
+  updateListenerReadout();
+  updateAudio();
+}
+roomMap.addEventListener('pointerdown',event => {
+  if (event.button !== 0 || drag) return;
+  const marker = event.target.closest('[data-marker]');
+  if (!marker) return;
+  const key = marker.dataset.marker;
+  if (key !== 'listener') selectSpeaker(speakers.find(s => String(s.id) === key));
+  marker.focus();
+  beginGesture();
+  const position = mapObject(key).position;
+  drag = {key,id:event.pointerId,x:event.clientX,y:event.clientY,startX:position.x,startZ:position.z,extent:mapExtent};
+  roomMap.setPointerCapture(event.pointerId);
+  event.preventDefault();
+});
+roomMap.addEventListener('pointermove',event => {
+  if (!drag || drag.id !== event.pointerId) return;
+  const rect = roomMap.getBoundingClientRect();
+  if (rect.width && rect.height) placeOnMap(drag.key,drag.startX+(event.clientX-drag.x)/rect.width*drag.extent*2,drag.startZ+(event.clientY-drag.y)/rect.height*drag.extent*2);
+});
+function finishMapDrag(event) {
+  if (!drag || drag.id !== event.pointerId) return;
+  drag = null;
+  endGesture();
+  updateMap();
+}
+roomMap.addEventListener('pointerup',finishMapDrag);
+roomMap.addEventListener('pointercancel',finishMapDrag);
+roomMap.addEventListener('lostpointercapture',finishMapDrag);
+roomMap.addEventListener('keydown',event => {
+  const marker = event.target.closest('[data-marker]');
+  const directions = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+  if (!marker || !directions[event.key] || event.ctrlKey || event.metaKey || event.altKey) return;
+  event.preventDefault();
+  remember();
+  const position = mapObject(marker.dataset.marker).position;
+  const step = event.shiftKey ? 0.1 : 0.5;
+  const [dx,dz] = directions[event.key];
+  placeOnMap(marker.dataset.marker,position.x+dx*step,position.z+dz*step);
+});
+roomMap.addEventListener('click',event => {
+  const key = event.target.closest('[data-marker]')?.dataset.marker;
+  if (key && key !== 'listener') selectSpeaker(speakers.find(s => String(s.id) === key));
+});
+function setSceneView(map) {
+  roomMap.hidden = !map;
+  document.getElementById('mapHint').hidden = !map;
+  renderer.domElement.hidden = map;
+  document.getElementById('mapView').setAttribute('aria-pressed',String(map));
+  document.getElementById('perspectiveView').setAttribute('aria-pressed',String(!map));
+}
+document.getElementById('mapView').onclick = () => setSceneView(true);
+document.getElementById('perspectiveView').onclick = () => setSceneView(false);
+updateMap();
+setSceneView(true);
 
 // ===== INTERACTION (CLICK SELECT) =====
 const raycaster = new THREE.Raycaster();
@@ -354,10 +605,12 @@ function updateAudio() {
 
 // ===== BASIC CAMERA CONTROL =====
 function updateListenerReadout() {
-  document.getElementById('listenerPosition').textContent = `Listener  X ${camera.position.x.toFixed(1)} · Z ${camera.position.z.toFixed(1)}`;
+  document.getElementById('listenerPosition').textContent = `You: X ${camera.position.x.toFixed(1)} · Z ${camera.position.z.toFixed(1)}`;
+  if (arrangements) updateMap();
 }
 updateListenerReadout();
 function moveListener(direction) {
+  remember();
   const speed = 0.3;
   if (direction === "w") camera.position.z -= speed;
   if (direction === "s") camera.position.z += speed;
@@ -368,7 +621,7 @@ function moveListener(direction) {
   updateListenerReadout();
 }
 window.addEventListener("keydown", e => {
-  if (e.ctrlKey || e.metaKey || e.altKey || e.target?.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(e.target?.tagName)) return;
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.target?.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(e.target?.tagName)) return;
   const direction = e.key.toLowerCase();
   if ('wasd'.includes(direction) && direction.length === 1) moveListener(direction);
 });
@@ -380,7 +633,7 @@ document.querySelectorAll('[data-move]').forEach(button => {
 function animate() {
   requestAnimationFrame(animate);
   updateAudio();
-  renderer.render(scene, camera);
+  if (!renderer.domElement.hidden) renderer.render(scene, camera);
 }
 animate();
 

@@ -5,13 +5,13 @@ const {readFileSync} = require('node:fs');
 const html=readFileSync(require('node:path').join(__dirname,'..','index.html'),'utf8');
 function setup() {
   const elements=new Map();
-  function element(id){if(!elements.has(id))elements.set(id,{value:'',focus(){this.focused=true;},addEventListener(type,fn){this[type]=fn;},setAttribute(k,v){this[k]=v;}});return elements.get(id);}
+  function element(id){if(!elements.has(id))elements.set(id,{value:'',dataset:{},style:{setProperty(k,v){this[k]=v;}},appendChild(){},remove(){this.removed=true;},setPointerCapture(){},focus(){this.focused=true;},addEventListener(type,fn){this[type]=fn;},setAttribute(k,v){this[k]=v;}});return elements.get(id);}
   function vector(){return {x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}};}
   function Mesh(geo,material){this.position=vector();this.material=material;this.geometry=geo;}
-  function param(){return {value:0,setTargetAtTime(v){this.value=v;}};}
+  function param(){return {value:0,cancelScheduledValues(){},setValueAtTime(v){this.value=v;},setTargetAtTime(v){this.value=v;}};}
   function audioNode(){return {gain:param(),frequency:param(),positionX:param(),positionY:param(),positionZ:param(),connect(to){this.connectedTo=to;return to;},start(){},stop(){this.stopped=true;},disconnect(){this.disconnected=true;}};}
   const audio={resumeCalls:0,currentTime:0,destination:{},listener:audioNode(),createGain:audioNode,createOscillator:audioNode,createBiquadFilter:audioNode,createPanner:audioNode,async resume(){this.resumeCalls++;}};
-  const context=vm.createContext({document:{getElementById:element,querySelectorAll:()=>[],body:{appendChild(){}}},window:{AudioContext:function(){return audio;},innerWidth:800,innerHeight:600,addEventListener(type,fn){this[type]=fn;}},requestAnimationFrame(){},
+  const context=vm.createContext({document:{createElement:()=>element(Symbol()),getElementById:element,querySelectorAll:()=>[],body:{appendChild(){}}},window:{AudioContext:function(){return audio;},innerWidth:800,innerHeight:600,addEventListener(type,fn){this[type]=fn;}},requestAnimationFrame(){},
     THREE:{Scene:function(){this.add=()=>{};this.remove=()=>{};},PerspectiveCamera:function(_fov,aspect){this.aspect=aspect;this.position=vector();this.updateProjectionMatrix=()=>{};},WebGLRenderer:function(){this.domElement=element('canvas');this.setSize=(width,height)=>{this.width=width;this.height=height;};this.render=()=>{};},BoxGeometry:function(){this.dispose=()=>{this.disposed=true;};},Mesh,MeshBasicMaterial:function(){this.dispose=()=>{this.disposed=true;};this.color={set(v){this.value=v;}};},PointLight:function(){this.position=vector();},Raycaster:function(){this.setFromCamera=()=>{};this.intersectObjects=()=>[];},Vector2:function(){}},Math});
   vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],context);
   return {elements,audio,context,run:code=>vm.runInContext(code,context)};
@@ -29,7 +29,7 @@ test('audio remains muted until explicit start, resumes browser context, and can
 });
 test('speaker selection synchronizes sliders with its actual settings',()=>{
   const app=setup();
-  app.run('selectedSpeaker.gain.gain.value = 0.12; selectedSpeaker.osc.frequency.value = 660; selectSpeaker(selectedSpeaker)');
+  app.run('selectedSpeaker.volume = 0.12; selectedSpeaker.osc.frequency.value = 660; selectSpeaker(selectedSpeaker)');
   assert.equal(app.elements.get('volume').value,'0.12');
   assert.equal(app.elements.get('freq').value,'660');
   app.elements.get('addSpeaker').onclick();
@@ -168,4 +168,134 @@ test('speaker picking normalizes against the actual canvas rectangle including o
   canvas.click({clientX:12,clientY:20});
   assert.equal(app.run('mouse.x'),-1);
   assert.equal(app.run('mouse.y'),1);
+});
+
+test('A/B preserves independent edits and Undo restores overwritten arrangements',()=>{
+  const app=setup();
+  app.run('selectedSpeaker.osc.frequency.value=550');
+  app.elements.get('copyArrangement').onclick();
+  app.elements.get('arrangementB').onclick();
+  assert.equal(app.run('selectedSpeaker.osc.frequency.value'),550);
+  app.run('selectedSpeaker.osc.frequency.value=880');
+  app.elements.get('arrangementA').onclick();
+  assert.equal(app.run('selectedSpeaker.osc.frequency.value'),550);
+  app.elements.get('copyArrangement').onclick();
+  app.elements.get('undo').onclick();
+  assert.equal(app.run('arrangements.B.speakers[0][3]'),880);
+  assert.equal(app.run('activeArrangement'),'A');
+});
+
+test('continuous level editing is one reversible gesture and retains requested gain',()=>{
+  const app=setup();
+  const volume=app.elements.get('volume');
+  for(const value of ['0.4','0.3','0.2']) { volume.value=value;volume.oninput(); }
+  volume.onchange();
+  assert.equal(app.run('history.length'),1);
+  assert.equal(app.run('selectedSpeaker.volume'),0.2);
+  app.elements.get('undo').onclick();
+  assert.equal(app.run('selectedSpeaker.volume'),0.5);
+  assert.equal(app.run('history.length'),0);
+});
+
+test('mix budget is bounded with 32 full-volume voices without altering saved levels',()=>{
+  const app=setup();
+  app.run('applyScene({version:1,listener:[0,2,6],speakers:Array(32).fill([0,1,0,440,1])})');
+  assert.ok(app.run('speakers.reduce((sum,s)=>sum+s.gain.gain.value,0)')<=0.70000001);
+  assert.equal(app.run('serializeScene().speakers.every(s=>s[4]===1)'),true);
+  app.run('selectSpeaker(speakers[15])');
+  assert.equal(app.elements.get('volume').value,'1');
+  assert.equal(app.run('selectedSpeaker.filter.frequency.value'),20000);
+});
+
+test('Undo and switching arrangements invalidate delayed resume and active audio',async()=>{
+  for(const action of ['undo','arrangementB']) {
+    const app=setup();let resume;
+    app.elements.get('addSpeaker').onclick();
+    app.audio.resume=()=>new Promise(resolve=>{resume=resolve;});
+    const pending=app.elements.get('toggleAudio').onclick();
+    app.elements.get(action).onclick();
+    resume();await pending;
+    assert.equal(app.run('audioEnabled'),false);
+    assert.equal(app.run('masterGain.gain.value'),0);
+    app.audio.resume=async()=>{};
+    await app.elements.get('toggleAudio').onclick();
+    app.elements.get('addSpeaker').onclick();
+    app.elements.get('undo').onclick();
+    assert.equal(app.run('audioEnabled'),false);
+    assert.equal(app.run('masterGain.gain.value'),0);
+  }
+});
+
+test('saved workspaces round trip both arrangements and legacy scenes migrate independently',()=>{
+  const app=setup();
+  app.run('globalThis.legacy=serializeScene();restoreWorkspace(legacy);arrangements.B.speakers[0][3]=660');
+  assert.equal(app.run('selectedSpeaker.osc.frequency.value'),440);
+  app.run('switchArrangement("B");globalThis.snapshot=serializeWorkspace();switchArrangement("A");restoreWorkspace(snapshot)');
+  assert.equal(app.run('activeArrangement'),'B');
+  assert.equal(app.run('selectedSpeaker.osc.frequency.value'),660);
+  assert.equal(app.run('arrangements.A.speakers[0][3]'),440);
+  assert.equal(app.run('audioEnabled'),false);
+  const before=app.run('JSON.stringify(serializeWorkspace())');
+  assert.throws(()=>app.run('restoreWorkspace({version:2,active:"A",arrangements:{A:legacy,B:{}}})'));
+  assert.equal(app.run('JSON.stringify(serializeWorkspace())'),before);
+});
+
+test('map keyboard edits preserve height, clamp speakers and provide precision with Undo',()=>{
+  const app=setup();
+  app.run('globalThis.marker=mapMarkers.get("1");marker.closest=()=>marker');
+  const marker=app.run('marker'),map=app.elements.get('roomMap');
+  map.keydown({target:marker,key:'ArrowRight',shiftKey:true,preventDefault(){}});
+  assert.equal(app.run('selectedSpeaker.mesh.position.x'),1.1);
+  assert.equal(app.run('selectedSpeaker.mesh.position.y'),1);
+  app.elements.get('undo').onclick();
+  assert.equal(app.run('selectedSpeaker.mesh.position.x'),1);
+  app.run('placeOnMap("1",99,-99)');
+  assert.equal(app.run('selectedSpeaker.mesh.position.x'),5);
+  assert.equal(app.run('selectedSpeaker.mesh.position.z'),-5);
+});
+
+test('map drag uses actual geometry, preserves grab offset and becomes one Undo entry',()=>{
+  const app=setup(),map=app.elements.get('roomMap');
+  app.run('globalThis.marker=mapMarkers.get("1");marker.closest=()=>marker');
+  map.getBoundingClientRect=()=>({width:280,height:280});
+  map.pointerdown({target:app.run('marker'),button:0,pointerId:7,clientX:151,clientY:123,preventDefault(){}});
+  for(const x of [171,191,211])map.pointermove({pointerId:7,clientX:x,clientY:143});
+  map.pointercancel({pointerId:7});
+  assert.equal(app.run('selectedSpeaker.mesh.position.x'),4);
+  assert.equal(app.run('selectedSpeaker.mesh.position.z'),1);
+  assert.equal(app.run('history.length'),1);
+  app.elements.get('undo').onclick();
+  assert.equal(app.run('selectedSpeaker.mesh.position.x'),1);
+  assert.equal(app.run('selectedSpeaker.mesh.position.z'),0);
+});
+
+test('legacy distant listener remains visible, Home is reversible and history is bounded',()=>{
+  const app=setup();
+  app.run('applyScene({version:1,listener:[90,2,-100],speakers:SCENE_PRESETS.single})');
+  assert.equal(app.run('mapExtent'),101);
+  app.elements.get('homeListener').onclick();
+  assert.equal(app.run('camera.position.z'),6);
+  app.elements.get('undo').onclick();
+  assert.equal(app.run('camera.position.z'),-100);
+  for(let n=0;n<60;n++)app.run('moveListener("a")');
+  assert.equal(app.run('history.length'),40);
+});
+
+test('held map drag cannot edit a scene replaced by a preset, A/B, Restore or Undo',()=>{
+  for(const action of ['preset','switch','restore','undo']) {
+    const app=setup(),map=app.elements.get('roomMap');
+    app.run('globalThis.saved=serializeWorkspace();globalThis.marker=mapMarkers.get("1");marker.closest=()=>marker');
+    map.getBoundingClientRect=()=>({width:280,height:280});
+    map.pointerdown({target:app.run('marker'),button:0,pointerId:7,clientX:150,clientY:120,preventDefault(){}});
+    map.pointermove({pointerId:7,clientX:170,clientY:120});
+    if(action==='preset') {app.run('document.getElementById("scenePreset").value="stereo"');app.elements.get('applyScene').onclick();}
+    if(action==='switch')app.elements.get('arrangementB').onclick();
+    if(action==='restore')app.run('endGesture();restoreWorkspace(saved)');
+    if(action==='undo')app.elements.get('undo').onclick();
+    const before=app.run('JSON.stringify(serializeScene())');
+    map.pointermove({pointerId:7,clientX:250,clientY:250});
+    map.pointerup({pointerId:7});
+    assert.equal(app.run('JSON.stringify(serializeScene())'),before,action);
+    assert.equal(app.run('drag'),null);
+  }
 });
