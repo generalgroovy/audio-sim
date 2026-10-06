@@ -1,0 +1,62 @@
+[
+  {
+    "width": 1366,
+    "workflow": "drag, undo, precision keys, audio start, A/B copy/edit, muted switch, save/reload/restore, remove/undo, map/3D state preservation",
+    "layout": {
+      "width": 1366,
+      "height": 768,
+      "overflow": false,
+      "map": {
+        "left": 523,
+        "right": 1153,
+        "bottom": 699,
+        "top": 69
+      },
+      "ui": {
+        "left": 10,
+        "top": 10
+      }
+    },
+    "errors": []
+  },
+  {
+    "width": 390,
+    "workflow": "drag, undo, precision keys, audio start, A/B copy/edit, muted switch, save/reload/restore, remove/undo, map/3D state preservation",
+    "layout": {
+      "width": 390,
+      "height": 844,
+      "overflow": false,
+      "map": {
+        "left": 26,
+        "right": 364,
+        "bottom": 404.375,
+        "top": 66.375
+      },
+      "ui": {
+        "left": 10,
+        "top": 445.765625
+      }
+    },
+    "errors": []
+  },
+  {
+    "width": 320,
+    "workflow": "drag, undo, precision keys, audio start, A/B copy/edit, muted switch, save/reload/restore, remove/undo, map/3D state preservation",
+    "layout": {
+      "width": 320,
+      "height": 844,
+      "overflow": false,
+      "map": {
+        "left": 26,
+        "right": 294,
+        "bottom": 369.375,
+        "top": 101.375
+      },
+      "ui": {
+        "left": 10,
+        "top": 445.765625
+      }
+    },
+    "errors": []
+  }
+]
