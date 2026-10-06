@@ -272,7 +272,8 @@ function removeSelectedSpeaker() {
     audioStartVersion++;
     audioPending = false;
     audioEnabled = false;
-    masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+    masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    masterGain.gain.setValueAtTime(0, audioCtx.currentTime);
     toggleAudio.textContent = 'Start audio';
     toggleAudio.setAttribute('aria-pressed', 'false');
     audioStatus.textContent = 'No speakers. Add a speaker to continue.';

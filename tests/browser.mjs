@@ -41,6 +41,8 @@ try {
     await page.getByRole('button',{name:'Copy A to B',exact:true}).click();
     await page.getByRole('button',{name:'B',exact:true}).click();
     assert.equal(await page.evaluate(()=>audioEnabled),false);
+    // AudioParam.value reflects the render thread's most recent quantum.
+    await page.waitForFunction(()=>masterGain.gain.value<0.00001,{},{timeout:1000});
     assert.equal(await page.evaluate(()=>masterGain.gain.value),0);
     await page.getByLabel('Frequency',{exact:true}).press('End');
     await page.getByLabel('Frequency',{exact:true}).press('Tab');
