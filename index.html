@@ -68,6 +68,10 @@
     #compareSection { border-top:1px solid #354757; padding-top:4px; }
     #compareSection summary { font-size:14px; } #compareSection .preset { border-top:1px solid #354757; margin-top:12px; padding-top:12px; }
     #applyScene { width:100%; } #saveStatus { min-height:1.45em; }
+    #savedWork { border:1px solid #608479; background:#1a302f; border-radius:8px; padding:10px; margin:8px 0 12px; }
+    #savedWork h2 { font-size:14px; margin:0; }
+    #savedWork .actions { margin:7px 0 0; }
+    #savedWork button { min-width:0; margin:0; padding:6px; }
     [hidden] { display:none !important; }
     input[type=range] { min-height:28px; margin:4px 0 10px; }
     @media(max-width:600px) {
@@ -94,6 +98,13 @@
   <p id="mapHint">Numbers are speakers · ↑ is you, facing forward<br>Drag a marker or focus it and use arrow keys.</p>
 </main>
 <div id="ui">
+  <section id="savedWork" aria-labelledby="savedWorkHeading" hidden>
+    <h2 id="savedWorkHeading">Saved work is available</h2>
+    <p id="savedWorkSummary" class="hint"></p>
+    <div class="actions"><button id="continueSaved">Continue saved work</button><button id="keepCurrent">Keep current</button></div>
+    <p class="hint">Continue restores both arrangements. Undo brings back your current work.</p>
+    <p id="savedWorkError" class="hint" role="status" hidden></p>
+  </section>
   <header class="identity"><h1>Speaker Simulator</h1><p>Place a sound. Move around it.</p></header>
   <div class="transport"><button id="toggleAudio" aria-pressed="false">Start audio</button>
   <p id="audioStatus" role="status">Audio stopped.</p></div>
@@ -392,12 +403,14 @@ document.getElementById('saveScene').onclick = () => {
     localStorage.setItem(SCENE_KEY,snapshot);
     savedWorkspaceJSON = snapshot;
     storageAvailable = true;
+    document.getElementById('savedWork').hidden = true;
     document.getElementById('sceneStatus').textContent = 'A + B saved in this browser.';
   }
   catch { storageAvailable = false; document.getElementById('sceneStatus').textContent = 'Browser storage is unavailable. Your arrangements were not saved.'; }
   updateSaveStatus();
 };
-document.getElementById('loadScene').onclick = () => {
+function loadSavedWorkspace(fromPrompt = false) {
+  let restored = false;
   try {
     const raw = localStorage.getItem(SCENE_KEY);
     if (!raw) throw new Error('No saved scene in this browser.');
@@ -406,10 +419,27 @@ document.getElementById('loadScene').onclick = () => {
     restoreWorkspace(data);
     savedWorkspaceJSON = JSON.stringify(data);
     storageAvailable = true;
+    document.getElementById('savedWork').hidden = true;
     updateSaveStatus();
     document.getElementById('sceneStatus').textContent = 'Saved A + B restored. Audio stopped. Undo brings back your previous work.';
-  } catch { document.getElementById('sceneStatus').textContent = 'No usable saved scene. Your current scene is unchanged.'; }
-  document.getElementById('loadScene').focus();
+    restored = true;
+  } catch {
+    const message = 'Saved work could not be restored. Your current workspace is unchanged. Try again or keep current.';
+    document.getElementById('sceneStatus').textContent = message;
+    if (fromPrompt) {
+      document.getElementById('savedWorkError').textContent = message;
+      document.getElementById('savedWorkError').hidden = false;
+    }
+  }
+  if (fromPrompt && restored) focusCurrentObject();
+  else document.getElementById(fromPrompt ? 'continueSaved' : 'loadScene').focus();
+}
+document.getElementById('loadScene').onclick = () => loadSavedWorkspace();
+document.getElementById('continueSaved').onclick = () => loadSavedWorkspace(true);
+document.getElementById('keepCurrent').onclick = () => {
+  document.getElementById('savedWork').hidden = true;
+  document.getElementById('sceneStatus').textContent = 'Current workspace kept. Your saved A + B are still in Compare & save → Restore saved.';
+  focusCurrentObject();
 };
 ['X','Y','Z'].forEach(axis => {
   const input = document.getElementById('speaker'+axis);
@@ -493,10 +523,11 @@ function undoChange() {
   document.getElementById('undo').disabled = !history.length;
   // A final Undo becomes disabled. Return to the restored object instead of
   // leaving keyboard focus on a disabled control or a removed map marker.
-  if (before) {
-    const marker = selectedSpeaker && !roomMap.hidden ? mapMarkers.get(String(selectedSpeaker.id)) : null;
-    (marker || (selectedSpeaker ? speakerSelect : document.getElementById('addSpeaker'))).focus();
-  }
+  if (before) focusCurrentObject();
+}
+function focusCurrentObject() {
+  const marker = selectedSpeaker && !roomMap.hidden ? mapMarkers.get(String(selectedSpeaker.id)) : null;
+  (marker || (selectedSpeaker ? speakerSelect : document.getElementById('addSpeaker'))).focus();
 }
 function updateComparison() {
   document.getElementById('arrangementLabel').textContent = `Arrangement ${activeArrangement}`;
@@ -516,9 +547,18 @@ function switchArrangement(key) {
   document.getElementById('arrangement'+key).focus();
 }
 arrangements = {A:serializeScene(),B:serializeScene()};
+document.getElementById('savedWork').hidden = true;
 try {
   const raw = localStorage.getItem(SCENE_KEY);
-  if (raw) savedWorkspaceJSON = JSON.stringify(validateWorkspace(JSON.parse(raw)));
+  if (raw) {
+    const saved = validateWorkspace(JSON.parse(raw));
+    savedWorkspaceJSON = JSON.stringify(saved);
+    document.getElementById('savedWorkSummary').textContent = ['A','B'].map(key => {
+      const count = saved.arrangements[key].speakers.length;
+      return `${key}: ${count} speaker${count === 1 ? '' : 's'}`;
+    }).join(' · ') + ` · Opens ${saved.active}`;
+    document.getElementById('savedWork').hidden = false;
+  }
 } catch { storageAvailable = false; }
 updateSaveStatus();
 document.getElementById('undo').onclick = undoChange;

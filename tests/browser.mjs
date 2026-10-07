@@ -74,11 +74,40 @@ try {
     assert.equal(await speaker.evaluate(element=>element===document.activeElement),true);
     assert.equal(await page.locator('#saveStatus').textContent(),'A + B saved in this browser.');
     await page.reload();
+    await page.getByRole('region',{name:'Saved work is available',exact:true}).waitFor();
+    assert.equal(await page.locator('#savedWorkSummary').textContent(),'A: 1 speaker · B: 1 speaker · Opens B');
+    assert.equal(await page.evaluate(()=>activeArrangement),'A');
+    assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),440);
+    assert.equal(await page.evaluate(()=>audioEnabled),false);
+    assert.equal(await page.locator('#compareSection').evaluate(element=>element.open),false);
+    assert.equal(await page.locator('#continueSaved').evaluate(element=>{
+      const rect=element.getBoundingClientRect(),pane=document.getElementById('ui').getBoundingClientRect();
+      return rect.top>=pane.top&&rect.bottom<=pane.bottom;
+    }),true,'returning users can reach Continue without scrolling, including short viewports');
+    await page.screenshot({path:`test-results/${width}x${height}-saved-work.png`});
+    const saved=await page.evaluate(()=>localStorage.getItem(SCENE_KEY));
+    await page.getByRole('button',{name:'Keep current',exact:true}).click();
+    assert.equal(await page.locator('#savedWork').isVisible(),false);
+    assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),440);
+    assert.equal(await page.evaluate(()=>localStorage.getItem(SCENE_KEY)),saved);
+    assert.equal(await speaker.evaluate(element=>element===document.activeElement),true);
     await page.getByText('Compare & save',{exact:true}).click();
     await page.getByRole('button',{name:'Restore saved',exact:true}).click();
     assert.equal(await page.evaluate(()=>activeArrangement),'B');
     assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),2000);
     assert.equal(await page.evaluate(()=>audioEnabled),false);
+    await page.reload();
+    await page.getByRole('button',{name:'Continue saved work',exact:true}).click();
+    assert.equal(await page.evaluate(()=>activeArrangement),'B');
+    assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),2000);
+    assert.equal(await page.evaluate(()=>audioEnabled),false);
+    assert.equal(await page.locator('#savedWork').isVisible(),false);
+    assert.equal(await speaker.evaluate(element=>element===document.activeElement),true);
+    await page.getByRole('button',{name:'Undo',exact:true}).click();
+    assert.equal(await page.evaluate(()=>activeArrangement),'A');
+    assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),440);
+    await page.getByText('Compare & save',{exact:true}).click();
+    await page.getByRole('button',{name:'Restore saved',exact:true}).click();
     await page.getByLabel('Start with a preset',{exact:true}).selectOption('stereo');
     await page.getByRole('button',{name:'Use preset in B',exact:true}).click();
     assert.equal(await page.evaluate(()=>speakers.length),2);
@@ -114,7 +143,7 @@ try {
     assert.ok(width>600?layout.map.left>290:layout.map.bottom<layout.ui.top);
     assert.deepEqual(errors,[]);
     await page.screenshot({path:`test-results/${width}x${height}-workflow.png`});
-    results.push({width,height,workflow:'named speaker/listener groups, drag, undo focus, precision keys and height, audio start, A/B copy/edit, muted switch, save feedback/reload/restore, empty-room recovery, scoped presets, reversible listener reset, map/3D state preservation',layout,errors});
+    results.push({width,height,workflow:'named speaker/listener groups, drag, undo focus, precision keys and height, audio start, A/B copy/edit, muted switch, save feedback/reload/restore, visible saved-work decision, keep current preserves save, continue saved muted with Undo/focus, empty-room recovery, scoped presets, reversible listener reset, map/3D state preservation',layout,errors});
     await context.close();
   }
 } finally {

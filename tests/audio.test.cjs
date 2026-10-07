@@ -354,3 +354,99 @@ test('listener reset preserves speakers, announces its scope and remains reversi
   app.elements.get('undo').onclick();
   assert.equal(app.run('JSON.stringify(serializeScene().listener)'),'[3,2,4]');
 });
+
+function savedComparison() {
+  return JSON.stringify({version:2,active:'B',arrangements:{
+    A:{version:1,listener:[1,2,5],speakers:[[1,1,0,330,0.2]]},
+    B:{version:1,listener:[-2,2,4],speakers:[[-2,1,0,660,0.4],[2,3,0,880,0.1]]}
+  }});
+}
+
+test('returning workspace offers the saved A/B counts without applying or playing it',()=>{
+  const fresh=setup();
+  assert.equal(fresh.elements.get('savedWork').hidden,true);
+  const app=setup(savedComparison());
+  assert.equal(app.elements.get('savedWork').hidden,false);
+  assert.equal(app.elements.get('savedWorkSummary').textContent,'A: 1 speaker · B: 2 speakers · Opens B');
+  assert.equal(app.run('activeArrangement'),'A');
+  assert.equal(app.run('speakers.length'),1);
+  assert.equal(app.run('selectedSpeaker.osc.frequency.value'),440);
+  assert.equal(app.audio.resumeCalls,0);
+  assert.equal(app.run('masterGain.gain.value'),0);
+  assert.equal(setup('{"version":2,"arrangements":{}}').elements.get('savedWork').hidden,true);
+});
+
+test('continue saved restores both arrangements muted and Undo recovers current edits',async()=>{
+  for(const mapVisible of [true,false]) {
+    const app=setup(savedComparison());
+    app.run(`setSceneView(${mapVisible});selectedSpeaker.osc.frequency.value=550;placeOnMap('listener',3,2)`);
+    const before=app.run('JSON.stringify(serializeWorkspace())');
+    let resume;
+    app.audio.resume=()=>new Promise(resolve=>{resume=resolve;});
+    const pending=app.elements.get('toggleAudio').onclick();
+    app.elements.get('continueSaved').onclick();
+    resume();await pending;
+    assert.equal(app.run('JSON.stringify(serializeWorkspace())'),savedComparison());
+    assert.equal(app.run('audioEnabled'),false);
+    assert.equal(app.run('masterGain.gain.value'),0);
+    assert.equal(app.elements.get('savedWork').hidden,true);
+    assert.equal(app.run(mapVisible ? 'document.activeElement === mapMarkers.get("1")' : 'document.activeElement === speakerSelect'),true);
+    app.elements.get('undo').onclick();
+    assert.equal(app.run('JSON.stringify(serializeWorkspace())'),before);
+  }
+});
+
+test('keep current preserves edits, saved storage and audio; manual restore stays available',async()=>{
+  const saved=savedComparison(),app=setup(saved);
+  app.elements.get('addSpeaker').onclick();
+  const before=app.run('JSON.stringify(serializeWorkspace())'),history=app.run('history.length');
+  await app.elements.get('toggleAudio').onclick();
+  app.elements.get('keepCurrent').onclick();
+  assert.equal(app.elements.get('savedWork').hidden,true);
+  assert.equal(app.run('JSON.stringify(serializeWorkspace())'),before);
+  assert.equal(app.run('localStorage.getItem(SCENE_KEY)'),saved);
+  assert.equal(app.run('history.length'),history);
+  assert.equal(app.run('audioEnabled'),true);
+  assert.equal(app.run('document.activeElement === mapMarkers.get(String(selectedSpeaker.id))'),true);
+  app.elements.get('loadScene').onclick();
+  assert.equal(app.run('JSON.stringify(serializeWorkspace())'),saved);
+  assert.equal(app.run('audioEnabled'),false);
+});
+
+test('failed continue validates both arrangements before mutation and allows retry',()=>{
+  for(const unreadable of [false,true]) {
+    const app=setup(savedComparison());
+    app.elements.get('addSpeaker').onclick();
+    const before=app.run('JSON.stringify(serializeWorkspace())'),history=app.run('history.length');
+    const getItem=app.context.localStorage.getItem;
+    app.context.localStorage.getItem=()=>{
+      if(unreadable)throw Error('blocked');
+      return '{"version":2,"active":"A","arrangements":{"A":{"version":1,"listener":[0,2,6],"speakers":[]},"B":{}}}';
+    };
+    app.elements.get('continueSaved').onclick();
+    assert.equal(app.run('JSON.stringify(serializeWorkspace())'),before);
+    assert.equal(app.run('history.length'),history);
+    assert.equal(app.elements.get('savedWork').hidden,false);
+    assert.equal(app.elements.get('savedWorkError').hidden,false);
+    assert.match(app.elements.get('savedWorkError').textContent,/unchanged/);
+    assert.equal(app.run('document.activeElement === document.getElementById("continueSaved")'),true);
+    app.context.localStorage.getItem=getItem;
+    app.elements.get('continueSaved').onclick();
+    assert.equal(app.run('JSON.stringify(serializeWorkspace())'),savedComparison());
+  }
+});
+
+test('legacy empty saves resume recoverably and a new Save closes the old recovery prompt',()=>{
+  const app=setup(JSON.stringify({version:1,listener:[0,2,6],speakers:[]}));
+  assert.equal(app.elements.get('savedWorkSummary').textContent,'A: 0 speakers · B: 0 speakers · Opens A');
+  app.elements.get('continueSaved').onclick();
+  assert.equal(app.run('speakers.length'),0);
+  assert.equal(app.elements.get('toggleAudio').disabled,true);
+  assert.equal(app.run('document.activeElement === document.getElementById("addSpeaker")'),true);
+  app.elements.get('undo').onclick();
+  assert.equal(app.run('speakers.length'),1);
+  const changed=setup(savedComparison());
+  changed.elements.get('saveScene').onclick();
+  assert.equal(changed.elements.get('savedWork').hidden,true);
+  assert.equal(changed.run('localStorage.getItem(SCENE_KEY)'),changed.run('JSON.stringify(serializeWorkspace())'));
+});
