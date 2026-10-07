@@ -80,6 +80,10 @@
       .map-marker { min-width:40px; min-height:40px; }
 
     }
+    @media(max-width:600px) and (max-height:500px) {
+      /* Leave room for the listener marker beyond the map edge and its legend. */
+      .stage { padding-bottom:28px; }
+    }
   </style>
 </head>
 <body>

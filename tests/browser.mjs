@@ -25,6 +25,10 @@ try {
     assert.equal(await page.getByRole('region',{name:'You, the listener',exact:true}).count(),1);
     assert.equal(await page.evaluate(()=>audioEnabled),false);
     assert.equal(await page.evaluate(()=>masterGain.gain.value),0);
+    assert.equal(await page.evaluate(()=>{
+      const hint=document.getElementById('mapHint').getBoundingClientRect();
+      return [...document.querySelectorAll('.map-marker')].every(marker=>marker.getBoundingClientRect().bottom<=hint.top);
+    }),true,'initial map markers do not overlap the map legend');
     await page.screenshot({path:`test-results/${width}x${height}-initial.png`});
     const speaker=page.getByRole('button',{name:/Speaker 1, left\/right X/});
     const rect=await speaker.boundingBox(),map=await page.locator('#roomMap').boundingBox();
