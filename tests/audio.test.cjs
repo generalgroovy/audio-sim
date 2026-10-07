@@ -3,15 +3,17 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const {readFileSync} = require('node:fs');
 const html=readFileSync(require('node:path').join(__dirname,'..','index.html'),'utf8');
-function setup() {
+function setup(saved = null) {
   const elements=new Map();
-  function element(id){if(!elements.has(id))elements.set(id,{value:'',dataset:{},style:{setProperty(k,v){this[k]=v;}},appendChild(){},remove(){this.removed=true;},setPointerCapture(){},focus(){this.focused=true;},addEventListener(type,fn){this[type]=fn;},setAttribute(k,v){this[k]=v;}});return elements.get(id);}
+  let activeElement = null;
+  const storage = new Map(saved ? [['speaker-simulator.scene.v1',saved]] : []);
+  function element(id){if(!elements.has(id))elements.set(id,{value:'',dataset:{},style:{setProperty(k,v){this[k]=v;}},appendChild(){},remove(){this.removed=true;if(activeElement===this)activeElement=null;},setPointerCapture(){},focus(){this.focused=true;activeElement=this;},addEventListener(type,fn){this[type]=fn;},setAttribute(k,v){this[k]=v;}});return elements.get(id);}
   function vector(){return {x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}};}
   function Mesh(geo,material){this.position=vector();this.material=material;this.geometry=geo;}
   function param(){return {value:0,cancelScheduledValues(){},setValueAtTime(v){this.value=v;},setTargetAtTime(v){this.value=v;}};}
   function audioNode(){return {gain:param(),frequency:param(),positionX:param(),positionY:param(),positionZ:param(),connect(to){this.connectedTo=to;return to;},start(){},stop(){this.stopped=true;},disconnect(){this.disconnected=true;}};}
   const audio={resumeCalls:0,currentTime:0,destination:{},listener:audioNode(),createGain:audioNode,createOscillator:audioNode,createBiquadFilter:audioNode,createPanner:audioNode,async resume(){this.resumeCalls++;}};
-  const context=vm.createContext({document:{createElement:()=>element(Symbol()),getElementById:element,querySelectorAll:()=>[],body:{appendChild(){}}},window:{AudioContext:function(){return audio;},innerWidth:800,innerHeight:600,addEventListener(type,fn){this[type]=fn;}},requestAnimationFrame(){},
+  const context=vm.createContext({localStorage:{setItem(k,v){storage.set(k,v);},getItem:k=>storage.get(k)},document:{get activeElement(){return activeElement;},createElement:()=>element(Symbol()),getElementById:element,querySelectorAll:()=>[],body:{appendChild(){}}},window:{AudioContext:function(){return audio;},innerWidth:800,innerHeight:600,addEventListener(type,fn){this[type]=fn;}},requestAnimationFrame(){},
     THREE:{Scene:function(){this.add=()=>{};this.remove=()=>{};},PerspectiveCamera:function(_fov,aspect){this.aspect=aspect;this.position=vector();this.updateProjectionMatrix=()=>{};},WebGLRenderer:function(){this.domElement=element('canvas');this.setSize=(width,height)=>{this.width=width;this.height=height;};this.render=()=>{};},BoxGeometry:function(){this.dispose=()=>{this.disposed=true;};},Mesh,MeshBasicMaterial:function(){this.dispose=()=>{this.disposed=true;};this.color={set(v){this.value=v;}};},PointLight:function(){this.position=vector();},Raycaster:function(){this.setFromCamera=()=>{};this.intersectObjects=()=>[];},Vector2:function(){}},Math});
   vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],context);
   return {elements,audio,context,run:code=>vm.runInContext(code,context)};
@@ -298,4 +300,57 @@ test('held map drag cannot edit a scene replaced by a preset, A/B, Restore or Un
     assert.equal(app.run('JSON.stringify(serializeScene())'),before,action);
     assert.equal(app.run('drag'),null);
   }
+});
+
+test('empty scene offers recovery and final Undo focuses the restored visible object',()=>{
+  for (const mapVisible of [true,false]) {
+    const app=setup();
+    app.run(`setSceneView(${mapVisible})`);
+    app.elements.get('removeSpeaker').onclick();
+    assert.equal(app.elements.get('emptyScene').hidden,false);
+    assert.equal(app.elements.get('speakerEditor').hidden,true);
+    assert.equal(app.run('document.activeElement === document.getElementById("addSpeaker")'),true);
+    app.elements.get('undo').onclick();
+    assert.equal(app.elements.get('emptyScene').hidden,true);
+    assert.equal(app.elements.get('speakerEditor').hidden,false);
+    assert.equal(app.elements.get('undo').disabled,true);
+    assert.equal(app.run(mapVisible ? 'document.activeElement === mapMarkers.get(String(selectedSpeaker.id))' : 'document.activeElement === speakerSelect'),true);
+    assert.equal(app.run('audioEnabled'),false);
+  }
+});
+
+test('save feedback tracks settings, other arrangement copies, undo and browser reload',()=>{
+  const app=setup();
+  const status=app.elements.get('saveStatus');
+  assert.match(status.textContent,/No saved/);
+  app.elements.get('saveScene').onclick();
+  assert.equal(status.textContent,'A + B saved in this browser.');
+  const saved=app.run('savedWorkspaceJSON');
+  const frequency=app.elements.get('freq');frequency.value='660';frequency.oninput();frequency.onchange();
+  assert.equal(status.textContent,'Unsaved changes to A + B.');
+  app.elements.get('copyArrangement').onclick();
+  app.elements.get('undo').onclick();
+  assert.equal(status.textContent,'Unsaved changes to A + B.');
+  app.elements.get('undo').onclick();
+  assert.equal(status.textContent,'A + B saved in this browser.');
+  const reloaded=setup(saved);
+  assert.equal(reloaded.elements.get('saveStatus').textContent,'A + B saved in this browser.');
+  reloaded.elements.get('arrangementB').onclick();
+  assert.equal(reloaded.elements.get('applyScene').textContent,'Use preset in B');
+  assert.equal(reloaded.elements.get('saveStatus').textContent,'Unsaved changes to A + B.');
+  reloaded.elements.get('loadScene').onclick();
+  assert.equal(reloaded.elements.get('saveStatus').textContent,'A + B saved in this browser.');
+  assert.equal(reloaded.run('audioEnabled'),false);
+});
+
+test('listener reset preserves speakers, announces its scope and remains reversible',()=>{
+  const app=setup();
+  app.run('placeOnMap("listener",3,4)');
+  const speakers=app.run('JSON.stringify(serializeScene().speakers)');
+  app.elements.get('homeListener').onclick();
+  assert.equal(app.run('JSON.stringify(serializeScene().speakers)'),speakers);
+  assert.equal(app.run('JSON.stringify(serializeScene().listener)'),'[0,2,6]');
+  assert.match(app.elements.get('sceneStatus').textContent,/Speakers stay/);
+  app.elements.get('undo').onclick();
+  assert.equal(app.run('JSON.stringify(serializeScene().listener)'),'[3,2,4]');
 });

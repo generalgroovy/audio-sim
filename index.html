@@ -34,7 +34,7 @@
     #sceneStatus:empty { display:none; }
     #sceneStatus { font-size:12px; line-height:1.5; color:#a1e3d1; }
     output { float: right; font-variant-numeric: tabular-nums; }
-    .actions { margin-bottom: 14px; }
+    .actions { margin-bottom: 10px; }
     .actions, #movement { display: flex; gap: 8px; }
     .actions button, #movement button { flex: 1; }
     #movement { margin-top: 10px; }
@@ -49,10 +49,25 @@
     .map-marker[aria-pressed=true] { background:#655610; border:3px solid #ffda48; color:#fff; z-index:2; }
     .map-marker.listener { background:#164f56; border-radius:8px; border-color:#8be0e5; z-index:3; }
     #mapHint { position:absolute; bottom:12px; left:15px; right:15px; text-align:center; font-size:12px; color:#b8ccd9; margin:0; }
-    #mapStatus { font-size:12px; line-height:1.45; min-height:2.9em; color:#cbd9e6; }
+    #mapStatus { font-size:12px; line-height:1.45; color:#cbd9e6; margin:4px 0 0; }
     #undo { min-width:62px; }
     .comparison { display:flex; gap:6px; } .comparison button { flex:1; }
     .compact { display:flex; align-items:center; justify-content:space-between; gap:8px; } .compact p { margin:0; }
+    .identity { margin:0 0 12px; } .identity h1 { font-size:18px; margin:0 0 3px; letter-spacing:-.3px; }
+    .identity p, .hint, #saveStatus { font-size:12px; line-height:1.45; color:#b8ccd9; margin:5px 0; }
+    .control-group { border-top:1px solid #354757; margin-top:12px; padding-top:12px; }
+    .control-group h2 { font-size:14px; margin:0 0 9px; color:#eaf2fa; }
+    .speaker-heading { color:#ffe48a !important; } .listener-heading { color:#9be5df !important; }
+    #speakerEditor label { display:inline-block; } #speakerEditor output { font-size:13px; color:#eff9ff; }
+    #speakerEditor details { margin:0; } .position-fields { display:grid; gap:6px; }
+    .position-fields label { display:flex !important; align-items:center; justify-content:space-between; gap:8px; }
+    .position-fields input { width:86px; min-height:40px; }
+    #emptyScene { padding:10px; border:1px dashed #607785; border-radius:7px; margin-bottom:8px; }
+    #emptyScene p { margin:0; } #emptyScene .hint { margin-top:4px; }
+    #homeListener { font-size:12px; max-width:115px; }
+    #compareSection { border-top:1px solid #354757; padding-top:4px; }
+    #compareSection summary { font-size:14px; } #compareSection .preset { border-top:1px solid #354757; margin-top:12px; padding-top:12px; }
+    #applyScene { width:100%; } #saveStatus { min-height:1.45em; }
     [hidden] { display:none !important; }
     input[type=range] { min-height:28px; margin:4px 0 10px; }
     @media(max-width:600px) {
@@ -75,38 +90,49 @@
   <p id="mapHint">Numbers are speakers · ↑ is you, facing forward<br>Drag a marker or focus it and use arrow keys.</p>
 </main>
 <div id="ui">
+  <header class="identity"><h1>Speaker Simulator</h1><p>Place a sound. Move around it.</p></header>
   <div class="transport"><button id="toggleAudio" aria-pressed="false">Start audio</button>
   <p id="audioStatus" role="status">Audio stopped.</p></div>
   <div class="compact"><p id="arrangementLabel">Arrangement A</p><button id="undo" disabled>Undo</button></div>
-  <details><summary>Arrange &amp; compare</summary>
-    <div class="comparison" role="group" aria-label="Arrangement"><button id="arrangementA" aria-pressed="true">A</button><button id="arrangementB" aria-pressed="false">B</button></div>
-    <button id="copyArrangement">Copy A to B</button>
-    <p>Each keeps your edits. Switching stops audio. Undo restores the last change.</p>
-    <label for="scenePreset">Preset</label><select id="scenePreset"><option value="single">Single tone</option><option value="stereo">Stereo pair</option><option value="surround">Four corners</option></select>
-    <div class="actions"><button id="applyScene">Apply</button><button id="saveScene">Save</button><button id="loadScene">Restore</button></div>
-  </details>
   <p id="sceneStatus" role="status"></p>
-  <label for="speakerSelect">Speaker</label>
+  <section class="control-group" aria-labelledby="speakerHeading">
+  <h2 id="speakerHeading" class="speaker-heading">Speaker sound &amp; position</h2>
+  <div id="emptyScene" hidden><p>Your room is quiet.</p><p class="hint">Add a speaker to place a sound, or Undo to bring one back.</p></div>
+  <label for="speakerSelect">Selected speaker</label>
   <select id="speakerSelect"></select>
   <div class="actions"><button id="addSpeaker">Add speaker</button><button id="removeSpeaker">Remove</button></div>
-  <label for="volume">Volume</label><output id="volumeValue" for="volume">50%</output><br>
+  <div id="speakerEditor">
+  <label for="volume">Volume</label><output id="volumeValue" for="volume">50%</output>
   <input id="volume" type="range" min="0" max="1" step="0.01" value="0.5">
-
-  <br><label for="freq">Frequency</label><output id="freqValue" for="freq">440 Hz</output><br>
+  <label for="freq">Frequency</label><output id="freqValue" for="freq">440 Hz</output>
   <input id="freq" type="range" min="100" max="2000" step="1" value="440">
-
-  <details><summary>Position</summary>
-    <div class="position-fields"><label>X<input id="speakerX" type="number" min="-5" max="5" step="0.1"></label><label>Y<input id="speakerY" type="number" min="0" max="5" step="0.1"></label><label>Z<input id="speakerZ" type="number" min="-5" max="5" step="0.1"></label></div>
+  <details><summary>Exact position</summary>
+    <div class="position-fields"><label>Left / right (X)<input id="speakerX" type="number" min="-5" max="5" step="0.1"></label><label>Height (Y)<input id="speakerY" type="number" min="0" max="5" step="0.1"></label><label>Front / back (Z)<input id="speakerZ" type="number" min="-5" max="5" step="0.1"></label></div>
+    <p class="hint">Scene units. Negative X is left; negative Z is forward.</p>
   </details>
   <p id="mapStatus" aria-live="off"></p>
-  <div class="compact"><p id="listenerPosition" aria-live="off"></p><button id="homeListener">Home</button></div>
+  </div>
+  </section>
+  <section class="control-group" aria-labelledby="listenerHeading">
+  <h2 id="listenerHeading" class="listener-heading">You, the listener</h2>
+  <div class="compact"><p id="listenerPosition" aria-live="off"></p><button id="homeListener">Reset listener</button></div>
   <div id="movement" role="group" aria-label="Move listener">
     <button data-move="a" aria-label="Move left">←</button>
     <button data-move="w" aria-label="Move forward">↑</button>
     <button data-move="s" aria-label="Move back">↓</button>
     <button data-move="d" aria-label="Move right">→</button>
   </div>
-  <details><summary>Info</summary><p>Yellow marks the selected speaker. The blue arrow is the listener, facing the top of the map. Drag markers or focus one and use arrows (Shift for smaller steps). WASD and the buttons move the listener; Home brings you back. Position gives exact speaker coordinates. Undo, presets, A/B and Restore stop audio. Save stores both arrangements in this browser.</p><p>Spatial audio demonstration; walls do not simulate reflections or absorption. Levels share a bounded mix budget as speakers are added. Headphones can make browser panning easier to compare; device volume is yours to control.</p></details>
+  </section>
+  <details id="compareSection"><summary>Compare &amp; save</summary>
+    <div class="comparison" role="group" aria-label="Arrangement"><button id="arrangementA" aria-pressed="true">A</button><button id="arrangementB" aria-pressed="false">B</button></div>
+    <button id="copyArrangement">Copy A to B</button>
+    <p class="hint">Two arrangements, each with its own edits. Switching stops audio.</p>
+    <div class="preset"><label for="scenePreset">Start with a preset</label><select id="scenePreset"><option value="single">Single tone</option><option value="stereo">Stereo pair</option><option value="surround">Four corners</option></select>
+    <button id="applyScene">Use preset in A</button><p class="hint">Replaces this arrangement. Undo brings it back.</p></div>
+    <div class="actions"><button id="saveScene">Save A + B</button><button id="loadScene">Restore saved</button></div>
+    <p id="saveStatus">No saved arrangements yet.</p>
+  </details>
+  <details><summary>Info &amp; controls</summary><p>Yellow marks the selected speaker. The blue arrow is you, facing the top of the map. Drag markers or focus one and use arrows (Shift for smaller steps). WASD and the arrow buttons move you. Reset listener returns you to the starting position; it keeps your speakers. Exact position includes speaker height.</p><p>Undo, presets, A/B switches and Restore saved stop audio. Save A + B stores both arrangements in this browser. Restore replaces both, and can be undone. Saves stay in this browser; they are not a file backup.</p><p>Spatial audio demonstration; walls do not simulate reflections or absorption. Levels share a bounded mix budget as speakers are added. Headphones can make browser panning easier to compare; device volume is yours to control.</p></details>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -157,6 +183,8 @@ const history = [];
 let gestureBefore = null;
 let applyingScene = false;
 let nextSpeakerId = 1;
+let savedWorkspaceJSON = null;
+let storageAvailable = true;
 
 function createSpeaker(x=0,y=1,z=0) {
   // 3D object
@@ -230,6 +258,8 @@ toggleAudio.onclick = async () => {
 
 function selectSpeaker(speaker) {
   selectedSpeaker = speaker;
+  document.getElementById('speakerEditor').hidden = !speaker;
+  document.getElementById('emptyScene').hidden = !!speaker;
   volumeSlider.disabled = freqSlider.disabled = removeSpeakerButton.disabled = !speaker;
   speakerSelect.disabled = !speaker;
   toggleAudio.disabled = audioPending || !speakers.length;
@@ -251,6 +281,7 @@ function selectSpeaker(speaker) {
 function updateReadouts() {
   volumeValue.textContent = `${Math.round(Number(volumeSlider.value) * 100)}%`;
   freqValue.textContent = `${freqSlider.value} Hz`;
+  if (arrangements) updateSaveStatus();
 }
 selectSpeaker(selectedSpeaker);
 speakerSelect.onchange = () => selectSpeaker(speakers.find(s => String(s.id) === speakerSelect.value));
@@ -277,8 +308,9 @@ function removeSelectedSpeaker() {
     toggleAudio.textContent = 'Start audio';
     toggleAudio.setAttribute('aria-pressed', 'false');
     audioStatus.textContent = 'No speakers. Add a speaker to continue.';
-    document.getElementById('addSpeaker').focus();
-  } else speakerSelect.focus();
+    if (!applyingScene) document.getElementById('addSpeaker').focus();
+  } else if (!applyingScene) speakerSelect.focus();
+  if (!applyingScene) document.getElementById('sceneStatus').textContent = `Speaker ${speaker.id} removed. Undo can bring it back.`;
 }
 removeSpeakerButton.onclick = removeSelectedSpeaker;
 
@@ -304,6 +336,7 @@ document.getElementById("addSpeaker").onclick = () => {
     (Math.random()-0.5)*5
   ));
   if (speakers.length === 1) audioStatus.textContent = 'Audio stopped. Select Start audio.';
+  document.getElementById('sceneStatus').textContent = `Speaker ${selectedSpeaker.id} added and selected.`;
 };
 
 // Presets are reproducible; restored scenes always begin muted.
@@ -346,12 +379,19 @@ document.getElementById('applyScene').onclick = () => {
   const preset = SCENE_PRESETS[document.getElementById('scenePreset').value];
   remember();
   applyScene({version:1,listener:[0,2,6],speakers:preset});
-  document.getElementById('sceneStatus').textContent = 'Preset applied.';
+  document.getElementById('sceneStatus').textContent = `Preset applied to ${activeArrangement}. Audio stopped. Undo restores your previous arrangement.`;
   document.getElementById('applyScene').focus();
 };
 document.getElementById('saveScene').onclick = () => {
-  try { localStorage.setItem(SCENE_KEY,JSON.stringify(serializeWorkspace())); document.getElementById('sceneStatus').textContent = 'Both arrangements saved in this browser.'; }
-  catch { document.getElementById('sceneStatus').textContent = 'Browser storage is unavailable. Scene was not saved.'; }
+  try {
+    const snapshot = JSON.stringify(serializeWorkspace());
+    localStorage.setItem(SCENE_KEY,snapshot);
+    savedWorkspaceJSON = snapshot;
+    storageAvailable = true;
+    document.getElementById('sceneStatus').textContent = 'A + B saved in this browser.';
+  }
+  catch { storageAvailable = false; document.getElementById('sceneStatus').textContent = 'Browser storage is unavailable. Your arrangements were not saved.'; }
+  updateSaveStatus();
 };
 document.getElementById('loadScene').onclick = () => {
   try {
@@ -360,7 +400,10 @@ document.getElementById('loadScene').onclick = () => {
     const data = validateWorkspace(JSON.parse(raw));
     remember();
     restoreWorkspace(data);
-    document.getElementById('sceneStatus').textContent = 'Scene restored. Audio stopped.';
+    savedWorkspaceJSON = JSON.stringify(data);
+    storageAvailable = true;
+    updateSaveStatus();
+    document.getElementById('sceneStatus').textContent = 'Saved A + B restored. Audio stopped. Undo brings back your previous work.';
   } catch { document.getElementById('sceneStatus').textContent = 'No usable saved scene. Your current scene is unchanged.'; }
   document.getElementById('loadScene').focus();
 };
@@ -396,6 +439,13 @@ function validateWorkspace(data) {
   validateScene(data.arrangements.A);
   validateScene(data.arrangements.B);
   return JSON.parse(JSON.stringify(data));
+}
+function updateSaveStatus() {
+  const status = document.getElementById('saveStatus');
+  status.textContent = !storageAvailable ? 'Browser storage unavailable.'
+    : !savedWorkspaceJSON ? 'No saved arrangements yet.'
+    : JSON.stringify(serializeWorkspace()) === savedWorkspaceJSON ? 'A + B saved in this browser.'
+    : 'Unsaved changes to A + B.';
 }
 function capture() { return {workspace:serializeWorkspace(), selected:speakers.indexOf(selectedSpeaker)}; }
 function restoreWorkspace(data, selected = 0) {
@@ -437,12 +487,19 @@ function undoChange() {
     document.getElementById('sceneStatus').textContent = 'Change undone. Audio stopped.';
   }
   document.getElementById('undo').disabled = !history.length;
-  document.getElementById('undo').focus();
+  // A final Undo becomes disabled. Return to the restored object instead of
+  // leaving keyboard focus on a disabled control or a removed map marker.
+  if (before) {
+    const marker = selectedSpeaker && !roomMap.hidden ? mapMarkers.get(String(selectedSpeaker.id)) : null;
+    (marker || (selectedSpeaker ? speakerSelect : document.getElementById('addSpeaker'))).focus();
+  }
 }
 function updateComparison() {
   document.getElementById('arrangementLabel').textContent = `Arrangement ${activeArrangement}`;
   ['A','B'].forEach(key => document.getElementById('arrangement'+key).setAttribute('aria-pressed',String(key === activeArrangement)));
   document.getElementById('copyArrangement').textContent = `Copy ${activeArrangement} to ${activeArrangement === 'A' ? 'B' : 'A'}`;
+  document.getElementById('applyScene').textContent = `Use preset in ${activeArrangement}`;
+  updateSaveStatus();
 }
 function switchArrangement(key) {
   if (key === activeArrangement) return;
@@ -455,12 +512,18 @@ function switchArrangement(key) {
   document.getElementById('arrangement'+key).focus();
 }
 arrangements = {A:serializeScene(),B:serializeScene()};
+try {
+  const raw = localStorage.getItem(SCENE_KEY);
+  if (raw) savedWorkspaceJSON = JSON.stringify(validateWorkspace(JSON.parse(raw)));
+} catch { storageAvailable = false; }
+updateSaveStatus();
 document.getElementById('undo').onclick = undoChange;
 ['A','B'].forEach(key => document.getElementById('arrangement'+key).onclick = () => switchArrangement(key));
 document.getElementById('copyArrangement').onclick = () => {
   remember();
   const other = activeArrangement === 'A' ? 'B' : 'A';
   arrangements[other] = serializeScene();
+  updateSaveStatus();
   document.getElementById('sceneStatus').textContent = `Copied ${activeArrangement} to ${other}. Undo can restore the previous ${other}.`;
 };
 [volumeSlider,freqSlider].forEach(input => {
@@ -471,6 +534,7 @@ document.getElementById('homeListener').onclick = () => {
   remember();
   camera.position.set(0,2,6);
   updateListenerReadout();
+  document.getElementById('sceneStatus').textContent = 'Listener back at the start. Speakers stay where you placed them.';
 };
 
 const roomMap = document.getElementById('roomMap');
@@ -500,12 +564,13 @@ function updateMap() {
     marker.style.left = `${50 + item.position.x / (2*mapExtent)*100}%`;
     marker.style.top = `${50 + item.position.z / (2*mapExtent)*100}%`;
     const name = item.key === 'listener' ? 'Listener' : `Speaker ${item.key}`;
-    marker.setAttribute('aria-label',`${name}, X ${item.position.x.toFixed(1)}, Z ${item.position.z.toFixed(1)}. Arrow keys move.`);
+    marker.setAttribute('aria-label',`${name}, left/right X ${item.position.x.toFixed(1)}, front/back Z ${item.position.z.toFixed(1)}. Arrow keys move.`);
     marker.setAttribute('aria-pressed',String(item.speaker === selectedSpeaker));
     marker.title = name;
   }
   const distance = selectedSpeaker ? Math.hypot(selectedSpeaker.mesh.position.x-camera.position.x,selectedSpeaker.mesh.position.y-camera.position.y,selectedSpeaker.mesh.position.z-camera.position.z) : 0;
   document.getElementById('mapStatus').textContent = selectedSpeaker ? `Speaker ${selectedSpeaker.id} · ${distance.toFixed(1)} scene units from you` : 'Add a speaker to explore.';
+  updateSaveStatus();
 }
 function placeOnMap(key,x,z) {
   const object = mapObject(key);
@@ -606,7 +671,7 @@ function updateAudio() {
 
 // ===== BASIC CAMERA CONTROL =====
 function updateListenerReadout() {
-  document.getElementById('listenerPosition').textContent = `You: X ${camera.position.x.toFixed(1)} · Z ${camera.position.z.toFixed(1)}`;
+  document.getElementById('listenerPosition').textContent = `Left/right ${camera.position.x.toFixed(1)} · Front/back ${camera.position.z.toFixed(1)}`;
   if (arrangements) updateMap();
 }
 updateListenerReadout();

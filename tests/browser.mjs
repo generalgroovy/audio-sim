@@ -13,17 +13,20 @@ const browser=await chromium.launch({args:['--mute-audio']});
 const results=[];
 await mkdir('test-results',{recursive:true});
 try {
-  for (const width of [1366,390,320]) {
-    const context=await browser.newContext({viewport:{width,height:width>600?768:844},hasTouch:width<600});
+  for (const [width,height] of [[1366,768],[390,844],[320,844],[844,420],[320,420]]) {
+    const context=await browser.newContext({viewport:{width,height},hasTouch:width<600});
     const page=await context.newPage(),errors=[];
     page.on('pageerror',error=>errors.push(error.message));
     page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
-    await page.getByRole('button',{name:/Speaker 1, X/}).waitFor();
+    await page.getByRole('button',{name:/Speaker 1, left\/right X/}).waitFor();
+    assert.equal(await page.getByRole('heading',{name:'Speaker Simulator',exact:true}).count(),1);
+    assert.equal(await page.getByRole('region',{name:'Speaker sound & position',exact:true}).count(),1);
+    assert.equal(await page.getByRole('region',{name:'You, the listener',exact:true}).count(),1);
     assert.equal(await page.evaluate(()=>audioEnabled),false);
     assert.equal(await page.evaluate(()=>masterGain.gain.value),0);
-    await page.screenshot({path:`test-results/${width}-initial.png`});
-    const speaker=page.getByRole('button',{name:/Speaker 1, X/});
+    await page.screenshot({path:`test-results/${width}x${height}-initial.png`});
+    const speaker=page.getByRole('button',{name:/Speaker 1, left\/right X/});
     const rect=await speaker.boundingBox(),map=await page.locator('#roomMap').boundingBox();
     await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);
     await page.mouse.down();
@@ -32,12 +35,13 @@ try {
     assert.equal(await page.evaluate(()=>selectedSpeaker.mesh.position.x),2.4);
     await page.getByRole('button',{name:'Undo',exact:true}).click();
     assert.equal(await page.evaluate(()=>selectedSpeaker.mesh.position.x),1);
+    assert.equal(await speaker.evaluate(element=>element===document.activeElement),true);
     await speaker.click();
     await speaker.press('Shift+ArrowLeft');
     assert.equal(await page.evaluate(()=>selectedSpeaker.mesh.position.x),0.9);
     await page.getByRole('button',{name:'Start audio',exact:true}).click();
     assert.equal(await page.evaluate(()=>audioEnabled),true);
-    await page.getByText('Arrange & compare',{exact:true}).click();
+    await page.getByText('Compare & save',{exact:true}).click();
     await page.getByRole('button',{name:'Copy A to B',exact:true}).click();
     await page.getByRole('button',{name:'B',exact:true}).click();
     assert.equal(await page.evaluate(()=>audioEnabled),false);
@@ -51,18 +55,32 @@ try {
     assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),440);
     await page.getByRole('button',{name:'B',exact:true}).click();
     assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),2000);
-    await page.getByRole('button',{name:'Save',exact:true}).click();
+    await page.getByRole('button',{name:'Save A + B',exact:true}).click();
+    assert.equal(await page.locator('#saveStatus').textContent(),'A + B saved in this browser.');
     await page.getByRole('button',{name:'Remove',exact:true}).click();
     assert.equal(await page.evaluate(()=>speakers.length),0);
+    assert.equal(await page.locator('#emptyScene').isVisible(),true);
+    assert.equal(await page.locator('#speakerEditor').isVisible(),false);
+    assert.equal(await page.getByRole('button',{name:'Add speaker',exact:true}).evaluate(element=>element===document.activeElement),true);
+    assert.equal(await page.getByRole('button',{name:'Start audio',exact:true}).isDisabled(),true);
+    assert.equal(await page.locator('#saveStatus').textContent(),'Unsaved changes to A + B.');
     await page.getByRole('button',{name:'Undo',exact:true}).click();
     assert.equal(await page.evaluate(()=>speakers.length),1);
     assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),2000);
+    assert.equal(await speaker.evaluate(element=>element===document.activeElement),true);
+    assert.equal(await page.locator('#saveStatus').textContent(),'A + B saved in this browser.');
     await page.reload();
-    await page.getByText('Arrange & compare',{exact:true}).click();
-    await page.getByRole('button',{name:'Restore',exact:true}).click();
+    await page.getByText('Compare & save',{exact:true}).click();
+    await page.getByRole('button',{name:'Restore saved',exact:true}).click();
     assert.equal(await page.evaluate(()=>activeArrangement),'B');
     assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),2000);
     assert.equal(await page.evaluate(()=>audioEnabled),false);
+    await page.getByLabel('Start with a preset',{exact:true}).selectOption('stereo');
+    await page.getByRole('button',{name:'Use preset in B',exact:true}).click();
+    assert.equal(await page.evaluate(()=>speakers.length),2);
+    assert.equal(await page.evaluate(()=>arrangements.A.speakers.length),1);
+    await page.getByRole('button',{name:'Undo',exact:true}).click();
+    assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),2000);
     const before=await page.evaluate(()=>JSON.stringify(serializeWorkspace()));
     await page.getByRole('button',{name:'3D view',exact:true}).click();
     assert.equal(await page.locator('canvas').isVisible(),true);
@@ -70,7 +88,19 @@ try {
     await page.getByRole('button',{name:'Room map',exact:true}).click();
     assert.equal(await page.evaluate(()=>JSON.stringify(serializeWorkspace())),before);
     await page.getByRole('button',{name:'A',exact:true}).click();
-    await page.getByText('Arrange & compare',{exact:true}).click();
+    await page.getByText('Compare & save',{exact:true}).click();
+    await page.getByText('Exact position',{exact:true}).click();
+    await page.getByLabel('Height (Y)',{exact:true}).fill('3');
+    await page.getByLabel('Height (Y)',{exact:true}).press('Tab');
+    assert.equal(await page.evaluate(()=>selectedSpeaker.mesh.position.y),3);
+    const speakerState=await page.evaluate(()=>JSON.stringify(serializeScene().speakers));
+    await page.getByRole('button',{name:'Move forward',exact:true}).click();
+    await page.getByRole('button',{name:'Reset listener',exact:true}).click();
+    assert.equal(await page.evaluate(()=>JSON.stringify(serializeScene().listener)),'[0,2,6]');
+    assert.equal(await page.evaluate(()=>JSON.stringify(serializeScene().speakers)),speakerState);
+    await page.getByRole('button',{name:'Undo',exact:true}).click();
+    assert.equal(await page.evaluate(()=>camera.position.z),5.7);
+    await page.getByText('Exact position',{exact:true}).click();
     const layout=await page.evaluate(()=>{
       const map=document.getElementById('roomMap').getBoundingClientRect(),ui=document.getElementById('ui').getBoundingClientRect();
       return {width:innerWidth,height:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth,map:{left:map.left,right:map.right,bottom:map.bottom,top:map.top},ui:{left:ui.left,top:ui.top}};
@@ -79,8 +109,8 @@ try {
     assert.equal(layout.overflow,false);
     assert.ok(width>600?layout.map.left>290:layout.map.bottom<layout.ui.top);
     assert.deepEqual(errors,[]);
-    await page.screenshot({path:`test-results/${width}-workflow.png`});
-    results.push({width,workflow:'drag, undo, precision keys, audio start, A/B copy/edit, muted switch, save/reload/restore, remove/undo, map/3D state preservation',layout,errors});
+    await page.screenshot({path:`test-results/${width}x${height}-workflow.png`});
+    results.push({width,height,workflow:'named speaker/listener groups, drag, undo focus, precision keys and height, audio start, A/B copy/edit, muted switch, save feedback/reload/restore, empty-room recovery, scoped presets, reversible listener reset, map/3D state preservation',layout,errors});
     await context.close();
   }
 } finally {
