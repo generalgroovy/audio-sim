@@ -21,8 +21,8 @@ try {
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.getByRole('button',{name:/Speaker 1, left\/right X/}).waitFor();
     assert.equal(await page.getByRole('heading',{name:'Speaker Simulator',exact:true}).count(),1);
-    assert.equal(await page.getByRole('region',{name:'Speaker sound & position',exact:true}).count(),1);
-    assert.equal(await page.getByRole('region',{name:'You, the listener',exact:true}).count(),1);
+    assert.equal(await page.getByRole('region',{name:'Speakers',exact:true}).count(),1);
+    assert.equal(await page.getByRole('region',{name:'Listener',exact:true}).count(),1);
     assert.equal(await page.evaluate(()=>audioEnabled),false);
     assert.equal(await page.evaluate(()=>masterGain.gain.value),0);
     assert.equal(await page.evaluate(()=>{
@@ -74,7 +74,7 @@ try {
     assert.equal(await speaker.evaluate(element=>element===document.activeElement),true);
     assert.equal(await page.locator('#saveStatus').textContent(),'A + B saved in this browser.');
     await page.reload();
-    await page.getByRole('region',{name:'Saved work is available',exact:true}).waitFor();
+    await page.getByRole('region',{name:'Saved arrangements',exact:true}).waitFor();
     assert.equal(await page.locator('#savedWorkSummary').textContent(),'A: 1 speaker · B: 1 speaker · Opens B');
     assert.equal(await page.evaluate(()=>activeArrangement),'A');
     assert.equal(await page.evaluate(()=>selectedSpeaker.osc.frequency.value),440);

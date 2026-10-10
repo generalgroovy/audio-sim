@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>3D Speaker Simulator</title>
+  <title>Speaker Simulator · spatial audio</title>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; background:#11151a; }
     #ui {
@@ -15,8 +15,8 @@
       color: #eaf2fa;
       padding: 14px;
       border:1px solid #405365;
-      border-radius: 12px;
-      box-shadow:0 12px 32px #0006;
+      border-radius: 4px;
+      box-shadow:none;
     }
     #ui { box-sizing: border-box; width: min(290px, calc(100vw - 20px)); max-height: calc(100dvh - 20px); overflow-y: auto; }
     input { width: 100%; }
@@ -43,7 +43,7 @@
     .stage { pointer-events:none; position:absolute; inset:0 0 0 310px; display:grid; place-items:center; color:#eaf2fa; }
     .view-switch { pointer-events:auto; position:absolute; right:12px; top:10px; display:flex; gap:6px; z-index:2; }
     .view-switch button[aria-pressed=true], .comparison button[aria-pressed=true] { background:#365d55; border-color:#8bddc4; }
-    #roomMap { pointer-events:auto; position:relative; width:min(calc(100% - 50px), calc(100dvh - 140px)); aspect-ratio:1; border:1px solid #617383; border-radius:8px; background-color:#182530; background-image:linear-gradient(#ffffff0b 1px,transparent 1px),linear-gradient(90deg,#ffffff0b 1px,transparent 1px); background-size:7.142857% 7.142857%; touch-action:none; }
+    #roomMap { pointer-events:auto; position:relative; width:min(calc(100% - 50px), calc(100dvh - 140px)); aspect-ratio:1; border:1px solid #617383; border-radius:2px; background-color:#182530; background-image:linear-gradient(#ffffff0b 1px,transparent 1px),linear-gradient(90deg,#ffffff0b 1px,transparent 1px); background-size:7.142857% 7.142857%; touch-action:none; }
     #roomMap::before { content:""; position:absolute; inset:var(--room-inset,14.285714%); border:2px solid #7790a5; pointer-events:none; }
     .map-marker { position:absolute; transform:translate(-50%,-50%); margin:0; min-width:44px; min-height:44px; padding:2px; border-radius:50%; background:#3c4c60; border:2px solid #a5b7c9; z-index:1; touch-action:none; }
     .map-marker[aria-pressed=true] { background:#655610; border:3px solid #ffda48; color:#fff; z-index:2; }
@@ -99,20 +99,20 @@
 </main>
 <div id="ui">
   <section id="savedWork" aria-labelledby="savedWorkHeading" hidden>
-    <h2 id="savedWorkHeading">Saved work is available</h2>
+    <h2 id="savedWorkHeading">Saved arrangements</h2>
     <p id="savedWorkSummary" class="hint"></p>
     <div class="actions"><button id="continueSaved">Continue saved work</button><button id="keepCurrent">Keep current</button></div>
     <p class="hint">Continue restores both arrangements. Undo brings back your current work.</p>
     <p id="savedWorkError" class="hint" role="status" hidden></p>
   </section>
-  <header class="identity"><h1>Speaker Simulator</h1><p>Place a sound. Move around it.</p></header>
+  <header class="identity"><h1>Speaker Simulator</h1></header>
   <div class="transport"><button id="toggleAudio" aria-pressed="false">Start audio</button>
   <p id="audioStatus" role="status">Audio stopped.</p></div>
   <div class="compact"><p id="arrangementLabel">Arrangement A</p><button id="undo" disabled>Undo</button></div>
   <p id="sceneStatus" role="status"></p>
   <section class="control-group" aria-labelledby="speakerHeading">
-  <h2 id="speakerHeading" class="speaker-heading">Speaker sound &amp; position</h2>
-  <div id="emptyScene" hidden><p>Your room is quiet.</p><p class="hint">Add a speaker to place a sound, or Undo to bring one back.</p></div>
+  <h2 id="speakerHeading" class="speaker-heading">Speakers</h2>
+  <div id="emptyScene" hidden><p>No speakers.</p><p class="hint">Add a speaker, or Undo to restore one.</p></div>
   <label for="speakerSelect">Selected speaker</label>
   <select id="speakerSelect"></select>
   <div class="actions"><button id="addSpeaker">Add speaker</button><button id="removeSpeaker">Remove</button></div>
@@ -129,7 +129,7 @@
   </div>
   </section>
   <section class="control-group" aria-labelledby="listenerHeading">
-  <h2 id="listenerHeading" class="listener-heading">You, the listener</h2>
+  <h2 id="listenerHeading" class="listener-heading">Listener</h2>
   <div class="compact"><p id="listenerPosition" aria-live="off"></p><button id="homeListener">Reset listener</button></div>
   <div id="movement" role="group" aria-label="Move listener">
     <button data-move="a" aria-label="Move left">←</button>
@@ -613,7 +613,7 @@ function updateMap() {
     marker.title = name;
   }
   const distance = selectedSpeaker ? Math.hypot(selectedSpeaker.mesh.position.x-camera.position.x,selectedSpeaker.mesh.position.y-camera.position.y,selectedSpeaker.mesh.position.z-camera.position.z) : 0;
-  document.getElementById('mapStatus').textContent = selectedSpeaker ? `Speaker ${selectedSpeaker.id} · ${distance.toFixed(1)} scene units from you` : 'Add a speaker to explore.';
+  document.getElementById('mapStatus').textContent = selectedSpeaker ? `Speaker ${selectedSpeaker.id} · ${distance.toFixed(1)} scene units from you` : 'No speakers.';
   updateSaveStatus();
 }
 function placeOnMap(key,x,z) {

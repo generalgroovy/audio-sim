@@ -4,13 +4,13 @@
 
 ## Use it
 
-1. The **Room map** shows speakers as numbers and you as the blue arrow, facing forward. Drag a marker to move it. **Speaker sound & position** edits the selected speaker; **You, the listener** moves your listening position.
+1. The **Room map** shows speakers as numbers and you as the blue arrow, facing forward. Drag a marker to move it. **Speakers** edits the selected speaker; **Listener** moves your listening position.
 2. Select **Start audio** to listen. **Stop audio** mutes the output. Every fresh page, restored scene, arrangement switch and Undo starts muted.
 3. Use **A / B** inside **Compare & save** to keep two independent arrangements. **Copy A to B** gives you a starting point for a variation. Switching retains your edits and stops audio; start explicitly to listen again.
 4. **Undo** recovers the last edit, removal, preset, restore or comparison overwrite (up to 40 changes this session). A slider or map drag is one change.
 5. **Save A + B** stores both arrangements in this browser. The adjacent status tells you when later edits are unsaved. **Restore saved** validates the entire save before replacing both current arrangements; older single-scene saves remain compatible. Restore itself can be undone.
 
-When you return with a usable save, **Saved work is available** shows the saved speaker counts and the arrangement it will open. **Continue saved work** restores both arrangements, stays muted, and puts keyboard focus on the restored speaker (or Add speaker for an empty room). **Undo** brings back the workspace you had before continuing, including any new edits. **Keep current** dismisses the card without changing your work or the saved copy; **Compare & save → Restore saved** remains available. A failed restore keeps your current work and offers another try.
+When you return with a usable save, **Saved arrangements** shows the saved speaker counts and the arrangement it will open. **Continue saved work** restores both arrangements, stays muted, and puts keyboard focus on the restored speaker (or Add speaker for an empty room). **Undo** brings back the workspace you had before continuing, including any new edits. **Keep current** dismisses the card without changing your work or the saved copy; **Compare & save → Restore saved** remains available. A failed restore keeps your current work and offers another try.
 
 Sliders affect the selected speaker; Start/Stop affects all speakers. Speakers remain sounding when deselected. **Remove** stops and removes the selected speaker. Removing the last speaker mutes output and offers **Add speaker** or **Undo** to recover. Undo returns keyboard focus to the restored map marker (or the speaker selector in 3D view). Presets provide Single tone, Stereo pair, and Four corners. **Use preset in A/B** names the arrangement it replaces, and stops audio; the other arrangement stays intact. Blocked/full/corrupt storage leaves the active scene usable. Scene files, recording, and export are not implemented.
 
